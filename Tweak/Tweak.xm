@@ -307,14 +307,10 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 @end
 
 static PJOverlayWindow *PJWindow;
-static void PJInstallOverlay(void);
 
-static void PJSetOverlayVisible(BOOL visible) {
-    if (visible && !PJWindow) PJInstallOverlay();
+static void PJShowOverlay(void) {
     if (!PJWindow) return;
-    PJController *controller = (PJController *)PJWindow.rootViewController;
-    if (!visible) [controller stopMoving];
-    PJWindow.hidden = !visible;
+    PJWindow.hidden = NO;
 }
 
 static void PJRegisterVisibilityObservers(void) {
@@ -322,13 +318,12 @@ static void PJRegisterVisibilityObservers(void) {
     static int hideToken = 0;
     if (showToken == 0) {
         notify_register_dispatch(PJOverlayShowNotification, &showToken, dispatch_get_main_queue(), ^(int unused) {
-            PJInstallOverlay();
-            PJSetOverlayVisible(YES);
+            PJShowOverlay();
         });
     }
     if (hideToken == 0) {
         notify_register_dispatch(PJOverlayHideNotification, &hideToken, dispatch_get_main_queue(), ^(int unused) {
-            PJSetOverlayVisible(NO);
+            PJWindow.hidden = YES;
         });
     }
 }
@@ -349,26 +344,14 @@ static void PJInstallOverlay(void) {
     PJWindow.backgroundColor = UIColor.clearColor;
     PJWindow.rootViewController = [PJController new];
     PJWindow.hidden = !PJJoystickEnabled();
-}
-
-static void PJScheduleOverlayInstall(NSInteger retriesRemaining) {
-    PJInstallOverlay();
-    if (PJWindow) {
-        PJSetOverlayVisible(PJJoystickEnabled());
-        return;
-    }
-    if (retriesRemaining <= 0) return;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        PJScheduleOverlayInstall(retriesRemaining - 1);
-    });
+    PJRegisterVisibilityObservers();
 }
 
 %hook SpringBoard
 - (void)applicationDidFinishLaunching:(id)application {
     %orig;
-    PJRegisterVisibilityObservers();
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        PJScheduleOverlayInstall(10);
+        PJInstallOverlay();
     });
 }
 %end
