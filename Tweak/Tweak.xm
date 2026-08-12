@@ -136,6 +136,7 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     self.status.textColor = [UIColor colorWithWhite:0.8 alpha:1];
     self.status.textAlignment = NSTextAlignmentCenter;
     self.status.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
+    self.status.hidden = YES;
     [self.panel addSubview:self.status];
     [self updateSpeedTitle];
 
@@ -406,7 +407,7 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 }
 
 - (void)updateSpeedTitle {
-    NSArray<NSString *> *titles = @[@"步行 1.4", @"快走 2.5", @"跑步 5.0"];
+    NSArray<NSString *> *titles = @[@"步行", @"快走", @"跑步"];
     [self.speedButton setTitle:titles[self.speedIndex] forState:UIControlStateNormal];
 }
 

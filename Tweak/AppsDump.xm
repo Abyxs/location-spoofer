@@ -9,6 +9,8 @@
 
 @interface CLSimulationManager : NSObject
 - (void)appendSimulatedLocation:(CLLocation *)location;
+- (void)clearSimulatedLocations;
+- (void)flush;
 - (void)startLocationSimulation;
 - (void)stopLocationSimulation;
 @end
@@ -77,10 +79,41 @@ static void PJInstallJoystickSwitch(UIViewController *controller) {
     if (toggle.isOn) notify_post(PJOverlayShowNotification);
 }
 
-static __weak CLSimulationManager *PJSimulator;
+static CLSimulationManager *PJSimulator;
 static CLLocation *PJLastLocation;
 static __weak UIViewController *PJMapController;
 static int PJNotifyToken;
+
+static CLSimulationManager *PJEnsureSimulator(void) {
+    if (!PJSimulator) {
+        Class simulatorClass = NSClassFromString(@"CLSimulationManager");
+        if (simulatorClass) PJSimulator = [[simulatorClass alloc] init];
+    }
+    return PJSimulator;
+}
+
+static CLLocationCoordinate2D PJTransformCoordinate(CLLocationCoordinate2D coordinate, SEL selector) {
+    Class transformClass = NSClassFromString(@"wjLocationTransform");
+    SEL initializer = @selector(initWithLatitude:andLongitude:);
+    if (!transformClass || ![transformClass instancesRespondToSelector:initializer]) return coordinate;
+    id transform = ((id (*)(id, SEL, double, double))objc_msgSend)([transformClass alloc], initializer,
+                                                                   coordinate.latitude, coordinate.longitude);
+    if (!transform || ![transform respondsToSelector:selector]) return coordinate;
+    id result = ((id (*)(id, SEL))objc_msgSend)(transform, selector) ?: transform;
+    if (![result respondsToSelector:@selector(latitude)] || ![result respondsToSelector:@selector(longitude)]) return coordinate;
+    double latitude = ((double (*)(id, SEL))objc_msgSend)(result, @selector(latitude));
+    double longitude = ((double (*)(id, SEL))objc_msgSend)(result, @selector(longitude));
+    CLLocationCoordinate2D transformed = CLLocationCoordinate2DMake(latitude, longitude);
+    return CLLocationCoordinate2DIsValid(transformed) ? transformed : coordinate;
+}
+
+static CLLocationCoordinate2D PJMapToSimulationCoordinate(CLLocationCoordinate2D coordinate) {
+    return PJTransformCoordinate(coordinate, NSSelectorFromString(@"transformFromGDToGPS"));
+}
+
+static CLLocationCoordinate2D PJSimulationToMapCoordinate(CLLocationCoordinate2D coordinate) {
+    return PJTransformCoordinate(coordinate, NSSelectorFromString(@"transformFromGPSToGD"));
+}
 
 static id PJObjectIvar(id object, const char *name) {
     Ivar ivar = class_getInstanceVariable(object_getClass(object), name);
@@ -155,8 +188,9 @@ static void PJConsumeCommand(void) {
         CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake(latitude.doubleValue, longitude.doubleValue);
         if (!CLLocationCoordinate2DIsValid(coordinate)) return;
         PJSyncAppsDumpMap(coordinate);
+        CLLocationCoordinate2D simulatedCoordinate = PJMapToSimulationCoordinate(coordinate);
         CLLocation *previous = PJLastLocation;
-        CLLocation *selected = [[CLLocation alloc] initWithCoordinate:coordinate
+        CLLocation *selected = [[CLLocation alloc] initWithCoordinate:simulatedCoordinate
                                                              altitude:previous ? previous.altitude : 0
                                                    horizontalAccuracy:previous ? MAX(1.0, previous.horizontalAccuracy) : 5.0
                                                      verticalAccuracy:previous ? MAX(1.0, previous.verticalAccuracy) : 5.0
@@ -165,8 +199,12 @@ static void PJConsumeCommand(void) {
                                                             timestamp:[NSDate date]];
         PJLastLocation = selected;
         PJWriteCurrentLocation(coordinate.latitude, coordinate.longitude);
+        simulator = PJEnsureSimulator();
         if (!simulator) return;
+        [simulator stopLocationSimulation];
+        [simulator clearSimulatedLocations];
         [simulator appendSimulatedLocation:selected];
+        [simulator flush];
         [simulator startLocationSimulation];
         return;
     }
@@ -188,8 +226,9 @@ static void PJConsumeCommand(void) {
                                             speed:speed
                                         timestamp:next.timestamp];
     PJLastLocation = next;
-    PJSyncAppsDumpMap(next.coordinate);
+    PJSyncAppsDumpMap(PJSimulationToMapCoordinate(next.coordinate));
     [simulator appendSimulatedLocation:next];
+    [simulator flush];
 }
 
 static void PJEnsureCommandObserver(void) {
@@ -214,7 +253,8 @@ static void PJInstallAppsDumpObserver(CLSimulationManager *simulator) {
 - (void)appendSimulatedLocation:(CLLocation *)location {
     if (location) {
         PJLastLocation = location;
-        PJWriteCurrentLocation(location.coordinate.latitude, location.coordinate.longitude);
+        CLLocationCoordinate2D mapCoordinate = PJSimulationToMapCoordinate(location.coordinate);
+        PJWriteCurrentLocation(mapCoordinate.latitude, mapCoordinate.longitude);
     }
     %orig;
 }
