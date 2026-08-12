@@ -4,7 +4,7 @@
 static NSString *const PJSharedCommandPath = @"/var/mobile/Library/Preferences/com.paopaolabs.joystick.command.plist";
 static const char *PJDarwinNotification = "com.paopaolabs.joystick.command";
 
-static BOOL PJWriteJoystickCommand(double east, double north, BOOL moving) {
+static __attribute__((unused)) BOOL PJWriteJoystickCommand(double east, double north, BOOL moving) {
     NSDictionary *command = @{
         @"eastMeters": @(east),
         @"northMeters": @(north),
