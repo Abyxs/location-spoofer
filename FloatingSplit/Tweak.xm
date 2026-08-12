@@ -24,6 +24,11 @@
 
 static NSString *const PFSRequester = @"com.paopaolabs.floatingsplit";
 
+static id PFSApplicationController(void) {
+    Class controllerClass = NSClassFromString(@"SBApplicationController");
+    return controllerClass ? ((id (*)(id, SEL))objc_msgSend)(controllerClass, @selector(sharedInstance)) : nil;
+}
+
 @interface PFSWindow : UIWindow
 @end
 
@@ -168,7 +173,8 @@ static NSString *const PFSRequester = @"com.paopaolabs.floatingsplit";
         NSPredicate *filter = [NSPredicate predicateWithBlock:^BOOL(SBApplication *app, NSDictionary *bindings) {
             return app.bundleIdentifier.length > 0 && ![app.bundleIdentifier isEqualToString:springBoardID] && app.displayName.length > 0;
         }];
-        self.applications = [[[SBApplicationController sharedInstance].allApplications filteredArrayUsingPredicate:filter]
+        NSArray *allApplications = ((id (*)(id, SEL))objc_msgSend)(PFSApplicationController(), @selector(allApplications));
+        self.applications = [[allApplications filteredArrayUsingPredicate:filter]
                              sortedArrayUsingComparator:^NSComparisonResult(SBApplication *a, SBApplication *b) {
             return [a.displayName localizedCompare:b.displayName];
         }];
@@ -208,7 +214,9 @@ static NSString *const PFSRequester = @"com.paopaolabs.floatingsplit";
     UIView *host = [manager hostViewForRequester:PFSRequester enableAndOrderFront:YES];
     if (!host && retry < 15) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            SBApplication *refreshed = [[SBApplicationController sharedInstance] applicationWithBundleIdentifier:app.bundleIdentifier];
+            SBApplication *refreshed = ((id (*)(id, SEL, id))objc_msgSend)(PFSApplicationController(),
+                                                                           @selector(applicationWithBundleIdentifier:),
+                                                                           app.bundleIdentifier);
             [self attachApplication:refreshed retry:retry + 1];
         });
         return;
