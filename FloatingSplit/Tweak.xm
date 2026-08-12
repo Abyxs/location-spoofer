@@ -1,8 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
 
-extern int SBSLaunchApplicationWithIdentifierAndURLAndLaunchOptions(NSString *, NSURL *, NSDictionary *, NSDictionary *, BOOL);
-
 @interface SBApplication : NSObject
 @property(nonatomic, readonly) NSString *bundleIdentifier;
 @property(nonatomic, readonly) NSString *displayName;
@@ -195,7 +193,12 @@ static NSString *const PFSRequester = @"com.paopaolabs.floatingsplit";
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     SBApplication *app = self.applications[indexPath.row];
     self.picker.hidden = YES;
-    SBSLaunchApplicationWithIdentifierAndURLAndLaunchOptions(app.bundleIdentifier, nil, @{}, @{}, YES);
+    Class workspaceClass = NSClassFromString(@"LSApplicationWorkspace");
+    id workspace = ((id (*)(id, SEL))objc_msgSend)(workspaceClass, NSSelectorFromString(@"defaultWorkspace"));
+    SEL opener = NSSelectorFromString(@"openApplicationWithBundleID:");
+    if ([workspace respondsToSelector:opener]) {
+        ((BOOL (*)(id, SEL, id))objc_msgSend)(workspace, opener, app.bundleIdentifier);
+    }
     [self attachApplication:app retry:0];
 }
 
