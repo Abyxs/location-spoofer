@@ -1,8 +1,8 @@
 Package: com.paopaolabs.joystick
-Name: Paopao Joystick
-Version: 0.1.0
+Name: 泡泡悬浮摇杆
+Version: 0.1.1
 Architecture: iphoneos-arm64
-Description: SpringBoard floating joystick for Paopao Location Spoofer.
+Description: 跨应用悬浮摇杆，配合 AppsDump3 实时模拟步行定位。
 Maintainer: Paopao Labs
 Author: Paopao Labs
 Section: Tweaks

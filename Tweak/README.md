@@ -1,4 +1,4 @@
-# Paopao Joystick (RootHide)
+# 泡泡悬浮摇杆（RootHide）
 
 ## 构建安装
 
