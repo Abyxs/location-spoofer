@@ -1,0 +1,9 @@
+Package: com.paopaolabs.floatingsplit
+Name: 泡泡悬浮分屏
+Version: 0.1.0
+Architecture: iphoneos-arm64
+Description: 在 iPhone 上以可拖动、缩放的悬浮窗口运行第二个应用。
+Maintainer: Paopao Labs
+Author: Paopao Labs
+Section: Tweaks
+Depends: firmware (>= 15.0), ellekit

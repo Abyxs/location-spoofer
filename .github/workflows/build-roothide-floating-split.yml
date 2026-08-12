@@ -1,0 +1,36 @@
+name: Build RootHide Floating Split Tweak
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/joystick-build
+    paths:
+      - "FloatingSplit/**"
+      - ".github/workflows/build-roothide-floating-split.yml"
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Theos
+        run: |
+          brew install ldid
+          git clone --recursive --depth=1 https://github.com/roothide/theos.git "$RUNNER_TEMP/theos"
+          echo "THEOS=$RUNNER_TEMP/theos" >> "$GITHUB_ENV"
+
+      - name: Build RootHide package
+        working-directory: FloatingSplit
+        run: make package FINALPACKAGE=1
+
+      - name: Upload DEB
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaopaoFloatingSplit-roothide
+          path: FloatingSplit/packages/*.deb
+          if-no-files-found: error
+          retention-days: 14
