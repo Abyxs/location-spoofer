@@ -20,7 +20,7 @@ static BOOL PJWriteJoystickCommand(double east, double north, BOOL moving) {
     return YES;
 }
 
-static NSDictionary *PJReadJoystickCommand(void) {
+static __attribute__((unused)) NSDictionary *PJReadJoystickCommand(void) {
     NSData *data = [NSData dataWithContentsOfFile:PJSharedCommandPath options:0 error:nil];
     if (!data) return nil;
     return [NSPropertyListSerialization propertyListWithData:data options:NSPropertyListImmutable format:nil error:nil];
