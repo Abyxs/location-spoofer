@@ -1,4 +1,5 @@
 #import <CoreLocation/CoreLocation.h>
+#import <MapKit/MapKit.h>
 #import <UIKit/UIKit.h>
 #import <math.h>
 #import <objc/message.h>
@@ -14,6 +15,11 @@
 
 @interface UIViewController (PJJoystickToggle)
 - (void)pj_toggleJoystick:(UISwitch *)sender;
+- (void)setLatitude:(double)latitude;
+- (void)setLongitude:(double)longitude;
+- (MKMapView *)mapView;
+- (MKPointAnnotation *)annotation;
+- (void)setAnnotation:(MKPointAnnotation *)annotation;
 @end
 
 static const void *PJJoystickSwitchKey = &PJJoystickSwitchKey;
@@ -73,7 +79,47 @@ static void PJInstallJoystickSwitch(UIViewController *controller) {
 
 static __weak CLSimulationManager *PJSimulator;
 static CLLocation *PJLastLocation;
+static __weak UIViewController *PJMapController;
 static int PJNotifyToken;
+
+static id PJObjectIvar(id object, const char *name) {
+    Ivar ivar = class_getInstanceVariable(object_getClass(object), name);
+    return ivar ? object_getIvar(object, ivar) : nil;
+}
+
+static void PJSyncAppsDumpMap(CLLocationCoordinate2D coordinate) {
+    UIViewController *controller = PJMapController;
+    if (!controller || !CLLocationCoordinate2DIsValid(coordinate)) return;
+
+    if ([controller respondsToSelector:@selector(setLatitude:)]) {
+        ((void (*)(id, SEL, double))objc_msgSend)(controller, @selector(setLatitude:), coordinate.latitude);
+    }
+    if ([controller respondsToSelector:@selector(setLongitude:)]) {
+        ((void (*)(id, SEL, double))objc_msgSend)(controller, @selector(setLongitude:), coordinate.longitude);
+    }
+
+    MKMapView *mapView = nil;
+    if ([controller respondsToSelector:@selector(mapView)]) {
+        mapView = ((id (*)(id, SEL))objc_msgSend)(controller, @selector(mapView));
+    }
+    if (!mapView) mapView = PJObjectIvar(controller, "_mapView");
+    if (![mapView isKindOfClass:MKMapView.class]) return;
+
+    MKPointAnnotation *annotation = nil;
+    if ([controller respondsToSelector:@selector(annotation)]) {
+        annotation = ((id (*)(id, SEL))objc_msgSend)(controller, @selector(annotation));
+    }
+    if (!annotation) annotation = PJObjectIvar(controller, "_annotation");
+    if (![annotation isKindOfClass:MKPointAnnotation.class]) {
+        annotation = [MKPointAnnotation new];
+        if ([controller respondsToSelector:@selector(setAnnotation:)]) {
+            ((void (*)(id, SEL, id))objc_msgSend)(controller, @selector(setAnnotation:), annotation);
+        }
+    }
+    annotation.coordinate = coordinate;
+    if (![mapView.annotations containsObject:annotation]) [mapView addAnnotation:annotation];
+    [mapView setCenterCoordinate:coordinate animated:NO];
+}
 
 static CLLocation *PJApplyOffset(CLLocation *location, double northMeters, double eastMeters) {
     if (!location) return nil;
@@ -100,7 +146,7 @@ static void PJConsumeCommand(void) {
     NSNumber *north = command[@"northMeters"];
     NSNumber *moving = command[@"moving"];
     NSNumber *timestamp = command[@"timestamp"];
-    if (!simulator || !timestamp) return;
+    if (!timestamp) return;
     if (fabs(timestamp.doubleValue - NSDate.date.timeIntervalSince1970) > 2.0) return;
     if ([command[@"action"] isEqualToString:@"set"]) {
         NSNumber *latitude = command[@"latitude"];
@@ -108,6 +154,7 @@ static void PJConsumeCommand(void) {
         if (!latitude || !longitude) return;
         CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake(latitude.doubleValue, longitude.doubleValue);
         if (!CLLocationCoordinate2DIsValid(coordinate)) return;
+        PJSyncAppsDumpMap(coordinate);
         CLLocation *previous = PJLastLocation;
         CLLocation *selected = [[CLLocation alloc] initWithCoordinate:coordinate
                                                              altitude:previous ? previous.altitude : 0
@@ -118,11 +165,12 @@ static void PJConsumeCommand(void) {
                                                             timestamp:[NSDate date]];
         PJLastLocation = selected;
         PJWriteCurrentLocation(coordinate.latitude, coordinate.longitude);
+        if (!simulator) return;
         [simulator appendSimulatedLocation:selected];
         [simulator startLocationSimulation];
         return;
     }
-    if (!PJLastLocation) return;
+    if (!simulator || !PJLastLocation) return;
     if (!east || !north || !moving) return;
     if (!moving.boolValue) return;
     CLLocation *next = PJApplyOffset(PJLastLocation, north.doubleValue, east.doubleValue);
@@ -140,15 +188,20 @@ static void PJConsumeCommand(void) {
                                             speed:speed
                                         timestamp:next.timestamp];
     PJLastLocation = next;
+    PJSyncAppsDumpMap(next.coordinate);
     [simulator appendSimulatedLocation:next];
 }
 
-static void PJInstallAppsDumpObserver(CLSimulationManager *simulator) {
-    PJSimulator = simulator;
+static void PJEnsureCommandObserver(void) {
     if (PJNotifyToken != 0) return;
     notify_register_dispatch(PJDarwinNotification, &PJNotifyToken, dispatch_get_main_queue(), ^(int token) {
         PJConsumeCommand();
     });
+}
+
+static void PJInstallAppsDumpObserver(CLSimulationManager *simulator) {
+    if (simulator) PJSimulator = simulator;
+    PJEnsureCommandObserver();
 }
 
 %hook CLSimulationManager
@@ -176,6 +229,16 @@ static void PJInstallAppsDumpObserver(CLSimulationManager *simulator) {
 %hook UIViewController
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
+    PJEnsureCommandObserver();
+    if ([NSStringFromClass(self.class) isEqualToString:@"MapViewController"]) {
+        PJMapController = self;
+        NSDictionary *location = PJReadCurrentLocation();
+        NSNumber *latitude = location[@"latitude"];
+        NSNumber *longitude = location[@"longitude"];
+        if (latitude && longitude) {
+            PJSyncAppsDumpMap(CLLocationCoordinate2DMake(latitude.doubleValue, longitude.doubleValue));
+        }
+    }
     Ivar simulatorIvar = class_getInstanceVariable(self.class, "_simulator");
     if (simulatorIvar) {
         id simulator = object_getIvar(self, simulatorIvar);

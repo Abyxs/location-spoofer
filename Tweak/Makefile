@@ -13,6 +13,6 @@ PaopaoJoystickSpringBoard_FRAMEWORKS = UIKit Foundation MapKit CoreLocation
 
 PaopaoJoystickAppsDump_FILES = AppsDump.xm
 PaopaoJoystickAppsDump_CFLAGS = -fobjc-arc
-PaopaoJoystickAppsDump_FRAMEWORKS = UIKit Foundation CoreLocation
+PaopaoJoystickAppsDump_FRAMEWORKS = UIKit Foundation CoreLocation MapKit
 
 include $(THEOS_MAKE_PATH)/tweak.mk
