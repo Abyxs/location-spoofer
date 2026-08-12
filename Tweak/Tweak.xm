@@ -28,6 +28,9 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 @property(nonatomic, strong) UIView *mapPanel;
 @property(nonatomic, strong) MKMapView *mapView;
 @property(nonatomic, strong) MKPointAnnotation *selectedAnnotation;
+@property(nonatomic, strong) MKPointAnnotation *currentAnnotation;
+@property(nonatomic, strong) UIButton *recenterButton;
+@property(nonatomic) int locationUpdateToken;
 @property(nonatomic, strong) CADisplayLink *displayLink;
 @property(nonatomic) CGPoint direction;
 @property(nonatomic) CGPoint targetDirection;
@@ -160,12 +163,12 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 
 - (void)buildMapPanel {
     self.mapPanel = [[UIView alloc] initWithFrame:CGRectZero];
-    self.mapPanel.backgroundColor = [UIColor colorWithWhite:0.04 alpha:0.72];
+    self.mapPanel.backgroundColor = UIColor.clearColor;
     self.mapPanel.hidden = YES;
     [self.view addSubview:self.mapPanel];
 
     self.mapView = [[MKMapView alloc] initWithFrame:CGRectZero];
-    self.mapView.alpha = 0.88;
+    self.mapView.alpha = 0.58;
     self.mapView.showsCompass = YES;
     self.mapView.showsScale = YES;
     [self.mapPanel addSubview:self.mapView];
@@ -178,6 +181,15 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     [backButton setTitle:@"摇杆" forState:UIControlStateNormal];
     [backButton addTarget:self action:@selector(hideMapPanel) forControlEvents:UIControlEventTouchUpInside];
     [self.mapPanel addSubview:backButton];
+
+    self.recenterButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.recenterButton.backgroundColor = [UIColor colorWithWhite:0.05 alpha:0.78];
+    self.recenterButton.layer.cornerRadius = 22;
+    self.recenterButton.tintColor = UIColor.whiteColor;
+    self.recenterButton.titleLabel.font = [UIFont systemFontOfSize:20 weight:UIFontWeightSemibold];
+    [self.recenterButton setTitle:@"◎" forState:UIControlStateNormal];
+    [self.recenterButton addTarget:self action:@selector(recenterMap) forControlEvents:UIControlEventTouchUpInside];
+    [self.mapPanel addSubview:self.recenterButton];
 
     UILabel *hint = [[UILabel alloc] initWithFrame:CGRectZero];
     hint.tag = 2020;
@@ -193,6 +205,11 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     UILongPressGestureRecognizer *press = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(selectMapLocation:)];
     press.minimumPressDuration = 0.55;
     [self.mapView addGestureRecognizer:press];
+
+    __weak PJController *weakSelf = self;
+    notify_register_dispatch(PJLocationUpdateNotification, &_locationUpdateToken, dispatch_get_main_queue(), ^(int token) {
+        [weakSelf refreshCurrentLocation:NO];
+    });
 }
 
 - (void)viewDidLayoutSubviews {
@@ -202,21 +219,35 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     UILabel *hint = (UILabel *)[self.mapPanel viewWithTag:2020];
     CGFloat width = MIN(180, self.view.bounds.size.width - 32);
     hint.frame = CGRectMake((self.view.bounds.size.width - width) / 2, self.view.safeAreaInsets.top + 12, width, 36);
+    self.recenterButton.frame = CGRectMake(self.view.bounds.size.width - 60, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 60, 44, 44);
 }
 
 - (void)showMapPanel {
     [self stopMoving];
-    NSDictionary *location = PJReadCurrentLocation();
-    NSNumber *latitude = location[@"latitude"];
-    NSNumber *longitude = location[@"longitude"];
-    if (latitude && longitude) {
-        CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake(latitude.doubleValue, longitude.doubleValue);
-        [self.mapView setRegion:MKCoordinateRegionMakeWithDistance(coordinate, 1200, 1200) animated:NO];
-        [self updateSelectedAnnotation:coordinate];
-    }
+    [self refreshCurrentLocation:YES];
     self.panel.hidden = YES;
     self.collapsedButton.hidden = YES;
     self.mapPanel.hidden = NO;
+}
+
+- (void)recenterMap {
+    [self refreshCurrentLocation:YES];
+}
+
+- (void)refreshCurrentLocation:(BOOL)centerMap {
+    NSDictionary *location = PJReadCurrentLocation();
+    NSNumber *latitude = location[@"latitude"];
+    NSNumber *longitude = location[@"longitude"];
+    if (!latitude || !longitude) return;
+    CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake(latitude.doubleValue, longitude.doubleValue);
+    if (!CLLocationCoordinate2DIsValid(coordinate)) return;
+    if (!self.currentAnnotation) {
+        self.currentAnnotation = [MKPointAnnotation new];
+        self.currentAnnotation.title = @"当前位置";
+        [self.mapView addAnnotation:self.currentAnnotation];
+    }
+    self.currentAnnotation.coordinate = coordinate;
+    if (centerMap) [self.mapView setRegion:MKCoordinateRegionMakeWithDistance(coordinate, 1200, 1200) animated:YES];
 }
 
 - (void)hideMapPanel {

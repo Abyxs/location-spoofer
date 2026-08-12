@@ -5,6 +5,7 @@ static NSString *const PJSharedCommandPath = @"/var/mobile/Library/Preferences/c
 static NSString *const PJSharedLocationPath = @"/var/mobile/Library/Preferences/com.paopaolabs.joystick.location.plist";
 static NSString *const PJPreferencesPath = @"/var/mobile/Library/Preferences/com.paopaolabs.joystick.preferences.plist";
 static const char *PJDarwinNotification = "com.paopaolabs.joystick.command";
+static const char *PJLocationUpdateNotification = "com.paopaolabs.joystick.location";
 static const char *PJOverlayShowNotification = "com.paopaolabs.joystick.show";
 static const char *PJOverlayHideNotification = "com.paopaolabs.joystick.hide";
 
@@ -62,6 +63,7 @@ static __attribute__((unused)) void PJWriteCurrentLocation(double latitude, doub
         @"longitude": @(longitude),
         @"timestamp": @([NSDate date].timeIntervalSince1970)
     } writeToFile:PJSharedLocationPath atomically:YES];
+    notify_post(PJLocationUpdateNotification);
 }
 
 static __attribute__((unused)) NSDictionary *PJReadCurrentLocation(void) {

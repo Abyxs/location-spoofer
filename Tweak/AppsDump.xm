@@ -102,25 +102,27 @@ static void PJConsumeCommand(void) {
     NSNumber *timestamp = command[@"timestamp"];
     if (!simulator || !timestamp) return;
     if (fabs(timestamp.doubleValue - NSDate.date.timeIntervalSince1970) > 2.0) return;
-    if (!PJLastLocation) return;
     if ([command[@"action"] isEqualToString:@"set"]) {
         NSNumber *latitude = command[@"latitude"];
         NSNumber *longitude = command[@"longitude"];
         if (!latitude || !longitude) return;
         CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake(latitude.doubleValue, longitude.doubleValue);
         if (!CLLocationCoordinate2DIsValid(coordinate)) return;
+        CLLocation *previous = PJLastLocation;
         CLLocation *selected = [[CLLocation alloc] initWithCoordinate:coordinate
-                                                             altitude:PJLastLocation.altitude
-                                                   horizontalAccuracy:MAX(1.0, PJLastLocation.horizontalAccuracy)
-                                                     verticalAccuracy:MAX(1.0, PJLastLocation.verticalAccuracy)
+                                                             altitude:previous ? previous.altitude : 0
+                                                   horizontalAccuracy:previous ? MAX(1.0, previous.horizontalAccuracy) : 5.0
+                                                     verticalAccuracy:previous ? MAX(1.0, previous.verticalAccuracy) : 5.0
                                                                course:-1
                                                                 speed:0
                                                             timestamp:[NSDate date]];
         PJLastLocation = selected;
         PJWriteCurrentLocation(coordinate.latitude, coordinate.longitude);
         [simulator appendSimulatedLocation:selected];
+        [simulator startLocationSimulation];
         return;
     }
+    if (!PJLastLocation) return;
     if (!east || !north || !moving) return;
     if (!moving.boolValue) return;
     CLLocation *next = PJApplyOffset(PJLastLocation, north.doubleValue, east.doubleValue);
@@ -174,6 +176,13 @@ static void PJInstallAppsDumpObserver(CLSimulationManager *simulator) {
 %hook UIViewController
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
+    Ivar simulatorIvar = class_getInstanceVariable(self.class, "_simulator");
+    if (simulatorIvar) {
+        id simulator = object_getIvar(self, simulatorIvar);
+        if ([simulator isKindOfClass:NSClassFromString(@"CLSimulationManager")]) {
+            PJInstallAppsDumpObserver((CLSimulationManager *)simulator);
+        }
+    }
     PJInstallJoystickSwitch(self);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         PJInstallJoystickSwitch(self);
