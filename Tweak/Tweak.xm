@@ -336,14 +336,8 @@ static void PJRegisterVisibilityObservers(void) {
 static void PJInstallOverlay(void) {
     if (PJWindow) return;
     UIWindowScene *scene = nil;
-    for (UIWindow *window in UIApplication.sharedApplication.windows) {
-        if (window.windowScene) {
-            scene = window.windowScene;
-            break;
-        }
-    }
     for (UIScene *candidate in UIApplication.sharedApplication.connectedScenes) {
-        if (!scene && [candidate isKindOfClass:UIWindowScene.class] && candidate.activationState != UISceneActivationStateUnattached) {
+        if ([candidate isKindOfClass:UIWindowScene.class] && candidate.activationState != UISceneActivationStateUnattached) {
             scene = (UIWindowScene *)candidate;
             break;
         }
