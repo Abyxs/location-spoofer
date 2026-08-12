@@ -12,23 +12,35 @@
 - (void)stopLocationSimulation;
 @end
 
-@interface MapViewController : UIViewController
+@interface UIViewController (PJJoystickToggle)
 - (void)pj_toggleJoystick:(UISwitch *)sender;
 @end
 
 static const void *PJJoystickSwitchKey = &PJJoystickSwitchKey;
 static const void *PJJoystickBarItemKey = &PJJoystickBarItemKey;
 static __weak UISwitch *PJSettingsSwitch;
-static int PJVisibilityNotifyToken;
+static int PJShowNotifyToken;
+static int PJHideNotifyToken;
 
 static void PJInstallVisibilityObserver(void) {
-    if (PJVisibilityNotifyToken != 0) return;
-    notify_register_dispatch(PJOverlayHideNotification, &PJVisibilityNotifyToken, dispatch_get_main_queue(), ^(int token) {
-        PJSettingsSwitch.on = NO;
-    });
+    if (PJShowNotifyToken == 0) {
+        notify_register_dispatch(PJOverlayShowNotification, &PJShowNotifyToken, dispatch_get_main_queue(), ^(int token) {
+            PJSettingsSwitch.on = YES;
+        });
+    }
+    if (PJHideNotifyToken == 0) {
+        notify_register_dispatch(PJOverlayHideNotification, &PJHideNotifyToken, dispatch_get_main_queue(), ^(int token) {
+            PJSettingsSwitch.on = NO;
+        });
+    }
 }
 
-static void PJInstallJoystickSwitch(MapViewController *controller) {
+static BOOL PJIsAppsDump(void) {
+    return [NSBundle.mainBundle.bundleIdentifier isEqualToString:@"cn.gblw.AppsDump"];
+}
+
+static void PJInstallJoystickSwitch(UIViewController *controller) {
+    if (!PJIsAppsDump() || [controller isKindOfClass:UIAlertController.class]) return;
     UISwitch *toggle = objc_getAssociatedObject(controller, PJJoystickSwitchKey);
     UIBarButtonItem *item = objc_getAssociatedObject(controller, PJJoystickBarItemKey);
     if (!toggle) {
@@ -136,10 +148,13 @@ static void PJInstallAppsDumpObserver(CLSimulationManager *simulator) {
 %end
 
 
-%hook MapViewController
+%hook UIViewController
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
     PJInstallJoystickSwitch(self);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        PJInstallJoystickSwitch(self);
+    });
 }
 
 %new

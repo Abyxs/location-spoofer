@@ -9,12 +9,17 @@ static const char *PJOverlayHideNotification = "com.paopaolabs.joystick.hide";
 
 static __attribute__((unused)) BOOL PJJoystickEnabled(void) {
     NSDictionary *preferences = [NSDictionary dictionaryWithContentsOfFile:PJPreferencesPath];
+    NSNumber *schemaVersion = preferences[@"schemaVersion"];
+    if (!schemaVersion || schemaVersion.integerValue < 1) {
+        [@{ @"enabled": @YES, @"schemaVersion": @1 } writeToFile:PJPreferencesPath atomically:YES];
+        return YES;
+    }
     NSNumber *enabled = preferences[@"enabled"];
     return enabled ? enabled.boolValue : YES;
 }
 
 static __attribute__((unused)) BOOL PJSetJoystickEnabled(BOOL enabled) {
-    NSDictionary *preferences = @{ @"enabled": @(enabled) };
+    NSDictionary *preferences = @{ @"enabled": @(enabled), @"schemaVersion": @1 };
     BOOL saved = [preferences writeToFile:PJPreferencesPath atomically:YES];
     notify_post(enabled ? PJOverlayShowNotification : PJOverlayHideNotification);
     return saved;
