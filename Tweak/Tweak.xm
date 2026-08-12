@@ -52,7 +52,7 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     [self.panel addSubview:self.closeButton];
 
     self.collapseButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.collapseButton.frame = CGRectMake(91, 7, 24, 24);
+    self.collapseButton.frame = CGRectMake(7, 7, 28, 24);
     self.collapseButton.tintColor = [UIColor colorWithWhite:1 alpha:0.75];
     self.collapseButton.titleLabel.font = [UIFont systemFontOfSize:18 weight:UIFontWeightRegular];
     [self.collapseButton setTitle:@"−" forState:UIControlStateNormal];
@@ -75,12 +75,27 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     [self.panel addSubview:self.base];
 
     self.knob = [[UIView alloc] initWithFrame:CGRectMake(31, 31, 48, 48)];
-    self.knob.backgroundColor = [UIColor colorWithRed:0.13 green:0.75 blue:0.48 alpha:0.95];
+    self.knob.backgroundColor = [UIColor colorWithRed:0.10 green:0.68 blue:0.40 alpha:1.0];
     self.knob.layer.cornerRadius = 24;
     self.knob.layer.shadowColor = UIColor.blackColor.CGColor;
-    self.knob.layer.shadowOpacity = 0.35;
-    self.knob.layer.shadowRadius = 5;
+    self.knob.layer.shadowOpacity = 0.58;
+    self.knob.layer.shadowRadius = 6;
+    self.knob.layer.shadowOffset = CGSizeMake(0, 5);
+    self.knob.layer.borderWidth = 1;
+    self.knob.layer.borderColor = [UIColor colorWithRed:0.34 green:0.92 blue:0.63 alpha:0.8].CGColor;
     [self.base addSubview:self.knob];
+
+    UIView *knobHighlight = [[UIView alloc] initWithFrame:CGRectMake(7, 5, 34, 15)];
+    knobHighlight.userInteractionEnabled = NO;
+    knobHighlight.backgroundColor = [UIColor colorWithWhite:1 alpha:0.18];
+    knobHighlight.layer.cornerRadius = 7.5;
+    [self.knob addSubview:knobHighlight];
+
+    UIView *knobShade = [[UIView alloc] initWithFrame:CGRectMake(8, 38, 32, 4)];
+    knobShade.userInteractionEnabled = NO;
+    knobShade.backgroundColor = [UIColor colorWithWhite:0 alpha:0.18];
+    knobShade.layer.cornerRadius = 2;
+    [self.knob addSubview:knobShade];
     UIPanGestureRecognizer *joystickPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(moveJoystick:)];
     [self.base addGestureRecognizer:joystickPan];
 
@@ -102,13 +117,16 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     [self updateSpeedTitle];
 
     self.collapsedButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.collapsedButton.frame = CGRectMake(20, 180, 52, 52);
-    self.collapsedButton.backgroundColor = [UIColor colorWithRed:0.13 green:0.75 blue:0.48 alpha:0.96];
-    self.collapsedButton.layer.cornerRadius = 26;
+    self.collapsedButton.frame = CGRectMake(20, 180, 48, 48);
+    self.collapsedButton.backgroundColor = [UIColor colorWithWhite:0.08 alpha:0.36];
+    self.collapsedButton.layer.cornerRadius = 24;
+    self.collapsedButton.layer.borderWidth = 1;
+    self.collapsedButton.layer.borderColor = [UIColor colorWithRed:0.25 green:0.92 blue:0.60 alpha:0.72].CGColor;
     self.collapsedButton.layer.shadowColor = UIColor.blackColor.CGColor;
-    self.collapsedButton.layer.shadowOpacity = 0.3;
-    self.collapsedButton.layer.shadowRadius = 5;
-    self.collapsedButton.tintColor = UIColor.whiteColor;
+    self.collapsedButton.layer.shadowOpacity = 0.28;
+    self.collapsedButton.layer.shadowRadius = 4;
+    self.collapsedButton.layer.shadowOffset = CGSizeMake(0, 3);
+    self.collapsedButton.tintColor = [UIColor colorWithWhite:1 alpha:0.9];
     [self.collapsedButton setTitle:@"摇" forState:UIControlStateNormal];
     self.collapsedButton.titleLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
     [self.collapsedButton addTarget:self action:@selector(expandJoystick) forControlEvents:UIControlEventTouchUpInside];
@@ -132,10 +150,11 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 
 - (void)collapseJoystick {
     [self stopMoving];
+    CGPoint origin = self.panel.frame.origin;
     self.panel.hidden = YES;
     self.collapsedButton.hidden = NO;
-    self.collapsedButton.frame = self.panel.frame;
-    self.collapsedButton.layer.cornerRadius = self.collapsedButton.bounds.size.width / 2.0;
+    self.collapsedButton.frame = CGRectMake(origin.x, origin.y, 48, 48);
+    self.collapsedButton.layer.cornerRadius = 24;
 }
 
 - (void)expandJoystick {
