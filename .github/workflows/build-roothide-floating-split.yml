@@ -25,7 +25,15 @@ jobs:
 
       - name: Build RootHide package
         working-directory: FloatingSplit
-        run: make package FINALPACKAGE=1
+        run: make package FINALPACKAGE=1 2>&1 | tee build.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaopaoFloatingSplit-build-log
+          path: FloatingSplit/build.log
+          retention-days: 14
 
       - name: Upload DEB
         uses: actions/upload-artifact@v4
