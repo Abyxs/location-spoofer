@@ -1,6 +1,8 @@
 #import <CoreLocation/CoreLocation.h>
+#import <UIKit/UIKit.h>
 #import <math.h>
 #import <objc/message.h>
+#import <objc/runtime.h>
 #import <notify.h>
 #import "PJJoystickIPC.h"
 
@@ -9,6 +11,52 @@
 - (void)startLocationSimulation;
 - (void)stopLocationSimulation;
 @end
+
+@interface MapViewController : UIViewController
+- (void)pj_toggleJoystick:(UISwitch *)sender;
+@end
+
+static const void *PJJoystickSwitchKey = &PJJoystickSwitchKey;
+static const void *PJJoystickBarItemKey = &PJJoystickBarItemKey;
+static __weak UISwitch *PJSettingsSwitch;
+static int PJVisibilityNotifyToken;
+
+static void PJInstallVisibilityObserver(void) {
+    if (PJVisibilityNotifyToken != 0) return;
+    notify_register_dispatch(PJOverlayHideNotification, &PJVisibilityNotifyToken, dispatch_get_main_queue(), ^(int token) {
+        PJSettingsSwitch.on = NO;
+    });
+}
+
+static void PJInstallJoystickSwitch(MapViewController *controller) {
+    UISwitch *toggle = objc_getAssociatedObject(controller, PJJoystickSwitchKey);
+    UIBarButtonItem *item = objc_getAssociatedObject(controller, PJJoystickBarItemKey);
+    if (!toggle) {
+        toggle = [[UISwitch alloc] initWithFrame:CGRectZero];
+        toggle.on = PJJoystickEnabled();
+        [toggle addTarget:controller action:@selector(pj_toggleJoystick:) forControlEvents:UIControlEventValueChanged];
+
+        UILabel *label = [[UILabel alloc] initWithFrame:CGRectZero];
+        label.text = @"摇杆";
+        label.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
+        label.textColor = UIColor.labelColor;
+
+        UIStackView *control = [[UIStackView alloc] initWithArrangedSubviews:@[label, toggle]];
+        control.axis = UILayoutConstraintAxisHorizontal;
+        control.alignment = UIStackViewAlignmentCenter;
+        control.spacing = 6;
+        item = [[UIBarButtonItem alloc] initWithCustomView:control];
+        objc_setAssociatedObject(controller, PJJoystickSwitchKey, toggle, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(controller, PJJoystickBarItemKey, item, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    toggle.on = PJJoystickEnabled();
+    PJSettingsSwitch = toggle;
+    PJInstallVisibilityObserver();
+    NSArray<UIBarButtonItem *> *items = controller.navigationItem.rightBarButtonItems ?: @[];
+    if (![items containsObject:item]) {
+        controller.navigationItem.rightBarButtonItems = [items arrayByAddingObject:item];
+    }
+}
 
 static __weak CLSimulationManager *PJSimulator;
 static CLLocation *PJLastLocation;
@@ -83,6 +131,19 @@ static void PJInstallAppsDumpObserver(CLSimulationManager *simulator) {
 
 - (void)startLocationSimulation {
     %orig;
-    notify_post(PJOverlayShowNotification);
+    if (PJJoystickEnabled()) notify_post(PJOverlayShowNotification);
+}
+%end
+
+
+%hook MapViewController
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    PJInstallJoystickSwitch(self);
+}
+
+%new
+- (void)pj_toggleJoystick:(UISwitch *)sender {
+    PJSetJoystickEnabled(sender.isOn);
 }
 %end

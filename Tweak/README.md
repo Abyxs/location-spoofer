@@ -21,4 +21,6 @@ make install
 
 安装后请先在 AppsDump3 内开启一次虚拟定位，再切换到目标 App。摇杆通过 Darwin 通知把位移交给 AppsDump3 的 `CLSimulationManager`，不需要 Wi-Fi 代理或断网。
 
+AppsDump3 的虚拟定位页面右上角提供“摇杆”开关；关闭后会彻底隐藏悬浮窗并记住状态，点击悬浮窗的 `×` 也会同步关闭该开关。
+
 兼容性：AppsDump3 4.0.6 的类和选择器已确认；若后续版本更改 `appendSimulatedLocation:`，摇杆会保持显示但不会移动位置。

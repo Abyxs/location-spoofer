@@ -151,6 +151,7 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 
 - (void)hideJoystick {
     [self stopMoving];
+    PJSetJoystickEnabled(NO);
     self.view.window.hidden = YES;
 }
 
@@ -307,16 +308,31 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 
 static PJOverlayWindow *PJWindow;
 
-static void PJShowOverlay(void) {
+static void PJSetOverlayVisible(BOOL visible) {
     if (!PJWindow) return;
-    PJWindow.hidden = NO;
+    PJController *controller = (PJController *)PJWindow.rootViewController;
+    if (!visible) [controller stopMoving];
+    PJWindow.hidden = !visible;
 }
 
-static void PJRegisterShowObserver(void) {
-    static int token = 0;
-    if (token != 0) return;
-    notify_register_dispatch(PJOverlayShowNotification, &token, dispatch_get_main_queue(), ^(int unused) {
-        PJShowOverlay();
+static void PJRegisterVisibilityObservers(void) {
+    static int showToken = 0;
+    static int hideToken = 0;
+    if (showToken == 0) {
+        notify_register_dispatch(PJOverlayShowNotification, &showToken, dispatch_get_main_queue(), ^(int unused) {
+            PJSetOverlayVisible(YES);
+        });
+    }
+    if (hideToken == 0) {
+        notify_register_dispatch(PJOverlayHideNotification, &hideToken, dispatch_get_main_queue(), ^(int unused) {
+            PJSetOverlayVisible(NO);
+        });
+    }
+}
+
+static void PJRefreshOverlayVisibility(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        PJSetOverlayVisible(PJJoystickEnabled());
     });
 }
 
@@ -335,8 +351,8 @@ static void PJInstallOverlay(void) {
     PJWindow.windowLevel = UIWindowLevelAlert + 100;
     PJWindow.backgroundColor = UIColor.clearColor;
     PJWindow.rootViewController = [PJController new];
-    PJWindow.hidden = NO;
-    PJRegisterShowObserver();
+    PJWindow.hidden = !PJJoystickEnabled();
+    PJRegisterVisibilityObservers();
 }
 
 %hook SpringBoard
@@ -344,6 +360,7 @@ static void PJInstallOverlay(void) {
     %orig;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         PJInstallOverlay();
+        PJRefreshOverlayVisibility();
     });
 }
 %end
