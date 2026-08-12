@@ -29,6 +29,7 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 @property(nonatomic, strong) MKMapView *mapView;
 @property(nonatomic, strong) MKPointAnnotation *locationAnnotation;
 @property(nonatomic, strong) UIButton *recenterButton;
+@property(nonatomic, strong) UISegmentedControl *mapModeControl;
 @property(nonatomic) int locationUpdateToken;
 @property(nonatomic, strong) CADisplayLink *displayLink;
 @property(nonatomic) CGPoint direction;
@@ -173,6 +174,15 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     self.mapView.showsScale = YES;
     [self.mapPanel addSubview:self.mapView];
 
+    self.mapModeControl = [[UISegmentedControl alloc] initWithItems:@[@"半透明", @"仅路线"]];
+    self.mapModeControl.selectedSegmentIndex = 0;
+    self.mapModeControl.backgroundColor = [UIColor colorWithWhite:0.05 alpha:0.72];
+    self.mapModeControl.selectedSegmentTintColor = [UIColor colorWithWhite:1 alpha:0.24];
+    [self.mapModeControl setTitleTextAttributes:@{NSForegroundColorAttributeName: UIColor.whiteColor}
+                                      forState:UIControlStateNormal];
+    [self.mapModeControl addTarget:self action:@selector(changeMapMode:) forControlEvents:UIControlEventValueChanged];
+    [self.mapPanel addSubview:self.mapModeControl];
+
     UIButton *backButton = [UIButton buttonWithType:UIButtonTypeSystem];
     backButton.frame = CGRectMake(14, 12, 64, 36);
     backButton.backgroundColor = [UIColor colorWithWhite:0.05 alpha:0.76];
@@ -218,8 +228,19 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     self.mapView.frame = self.mapPanel.bounds;
     UILabel *hint = (UILabel *)[self.mapPanel viewWithTag:2020];
     CGFloat width = MIN(180, self.view.bounds.size.width - 32);
-    hint.frame = CGRectMake((self.view.bounds.size.width - width) / 2, self.view.safeAreaInsets.top + 12, width, 36);
+    CGFloat top = self.view.safeAreaInsets.top + 12;
+    self.mapModeControl.frame = CGRectMake((self.view.bounds.size.width - 150) / 2, top, 150, 36);
+    hint.frame = CGRectMake((self.view.bounds.size.width - width) / 2, top + 46, width, 36);
     self.recenterButton.frame = CGRectMake(self.view.bounds.size.width - 60, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 60, 44, 44);
+}
+
+- (void)changeMapMode:(UISegmentedControl *)control {
+    BOOL routeOnly = control.selectedSegmentIndex == 1;
+    self.mapView.alpha = routeOnly ? 0.9 : 0.58;
+    self.mapView.overrideUserInterfaceStyle = routeOnly ? UIUserInterfaceStyleDark : UIUserInterfaceStyleUnspecified;
+    self.mapView.showsBuildings = !routeOnly;
+    self.mapView.showsPointsOfInterest = !routeOnly;
+    self.mapView.layer.compositingFilter = routeOnly ? @"screenBlendMode" : nil;
 }
 
 - (void)showMapPanel {
