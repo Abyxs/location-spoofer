@@ -15,7 +15,6 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 
 @interface PJController : UIViewController <UIGestureRecognizerDelegate>
 @property(nonatomic, strong) UIView *panel;
-@property(nonatomic, strong) UIButton *toggleButton;
 @property(nonatomic, strong) UIButton *closeButton;
 @property(nonatomic, strong) UIView *base;
 @property(nonatomic, strong) UIView *knob;
@@ -92,19 +91,6 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     [self.panel addSubview:self.status];
     [self updateSpeedTitle];
 
-    self.toggleButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.toggleButton.frame = CGRectMake(20, 180, 52, 52);
-    self.toggleButton.backgroundColor = [UIColor colorWithRed:0.13 green:0.75 blue:0.48 alpha:0.96];
-    self.toggleButton.layer.cornerRadius = 26;
-    self.toggleButton.layer.shadowColor = UIColor.blackColor.CGColor;
-    self.toggleButton.layer.shadowOpacity = 0.3;
-    self.toggleButton.layer.shadowRadius = 5;
-    self.toggleButton.tintColor = UIColor.whiteColor;
-    [self.toggleButton setTitle:@"摇" forState:UIControlStateNormal];
-    self.toggleButton.titleLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
-    [self.toggleButton addTarget:self action:@selector(showJoystick) forControlEvents:UIControlEventTouchUpInside];
-    self.toggleButton.hidden = YES;
-    [self.view addSubview:self.toggleButton];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -117,15 +103,7 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 
 - (void)hideJoystick {
     [self stopMoving];
-    self.panel.hidden = YES;
-    self.toggleButton.hidden = NO;
-    self.toggleButton.frame = self.panel.frame;
-    self.toggleButton.layer.cornerRadius = self.toggleButton.bounds.size.width / 2.0;
-}
-
-- (void)showJoystick {
-    self.panel.hidden = NO;
-    self.toggleButton.hidden = YES;
+    self.view.window.hidden = YES;
 }
 
 - (void)dragPanel:(UIPanGestureRecognizer *)gesture {
@@ -227,6 +205,19 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 
 static PJOverlayWindow *PJWindow;
 
+static void PJShowOverlay(void) {
+    if (!PJWindow) return;
+    PJWindow.hidden = NO;
+}
+
+static void PJRegisterShowObserver(void) {
+    static int token = 0;
+    if (token != 0) return;
+    notify_register_dispatch(PJOverlayShowNotification, &token, dispatch_get_main_queue(), ^(int unused) {
+        PJShowOverlay();
+    });
+}
+
 static void PJInstallOverlay(void) {
     if (PJWindow) return;
     UIWindowScene *scene = nil;
@@ -243,6 +234,7 @@ static void PJInstallOverlay(void) {
     PJWindow.backgroundColor = UIColor.clearColor;
     PJWindow.rootViewController = [PJController new];
     PJWindow.hidden = NO;
+    PJRegisterShowObserver();
 }
 
 %hook SpringBoard

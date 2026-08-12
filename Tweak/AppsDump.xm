@@ -68,4 +68,9 @@ static void PJInstallAppsDumpObserver(CLSimulationManager *simulator) {
     if (location) PJLastLocation = location;
     %orig;
 }
+
+- (void)startLocationSimulation {
+    %orig;
+    notify_post(PJOverlayShowNotification);
+}
 %end
