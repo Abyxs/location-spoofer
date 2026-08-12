@@ -15,6 +15,8 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 
 @interface PJController : UIViewController <UIGestureRecognizerDelegate>
 @property(nonatomic, strong) UIView *panel;
+@property(nonatomic, strong) UIButton *toggleButton;
+@property(nonatomic, strong) UIButton *closeButton;
 @property(nonatomic, strong) UIView *base;
 @property(nonatomic, strong) UIView *knob;
 @property(nonatomic, strong) UILabel *status;
@@ -39,6 +41,14 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     self.panel.layer.borderWidth = 1;
     self.panel.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.18].CGColor;
     [self.view addSubview:self.panel];
+
+    self.closeButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.closeButton.frame = CGRectMake(116, 7, 28, 24);
+    self.closeButton.tintColor = [UIColor colorWithWhite:1 alpha:0.75];
+    self.closeButton.titleLabel.font = [UIFont systemFontOfSize:20 weight:UIFontWeightRegular];
+    [self.closeButton setTitle:@"×" forState:UIControlStateNormal];
+    [self.closeButton addTarget:self action:@selector(hideJoystick) forControlEvents:UIControlEventTouchUpInside];
+    [self.panel addSubview:self.closeButton];
 
     UIView *grip = [[UIView alloc] initWithFrame:CGRectMake(51, 9, 48, 5)];
     grip.backgroundColor = [UIColor colorWithWhite:1 alpha:0.45];
@@ -81,6 +91,20 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     self.status.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
     [self.panel addSubview:self.status];
     [self updateSpeedTitle];
+
+    self.toggleButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.toggleButton.frame = CGRectMake(20, 180, 52, 52);
+    self.toggleButton.backgroundColor = [UIColor colorWithRed:0.13 green:0.75 blue:0.48 alpha:0.96];
+    self.toggleButton.layer.cornerRadius = 26;
+    self.toggleButton.layer.shadowColor = UIColor.blackColor.CGColor;
+    self.toggleButton.layer.shadowOpacity = 0.3;
+    self.toggleButton.layer.shadowRadius = 5;
+    self.toggleButton.tintColor = UIColor.whiteColor;
+    [self.toggleButton setTitle:@"摇" forState:UIControlStateNormal];
+    self.toggleButton.titleLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
+    [self.toggleButton addTarget:self action:@selector(showJoystick) forControlEvents:UIControlEventTouchUpInside];
+    self.toggleButton.hidden = YES;
+    [self.view addSubview:self.toggleButton];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -89,6 +113,19 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     CGRect frame = self.panel.frame;
     frame.origin.y = MAX(insets.top + 12, frame.origin.y);
     self.panel.frame = frame;
+}
+
+- (void)hideJoystick {
+    [self stopMoving];
+    self.panel.hidden = YES;
+    self.toggleButton.hidden = NO;
+    self.toggleButton.frame = self.panel.frame;
+    self.toggleButton.layer.cornerRadius = self.toggleButton.bounds.size.width / 2.0;
+}
+
+- (void)showJoystick {
+    self.panel.hidden = NO;
+    self.toggleButton.hidden = YES;
 }
 
 - (void)dragPanel:(UIPanGestureRecognizer *)gesture {
