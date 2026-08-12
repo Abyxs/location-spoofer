@@ -1,0 +1,19 @@
+#!/bin/sh
+
+if [ "$1" = "upgrade" ] || [ "$1" = "install" ]; then
+    dpkg -L com.paopaolabs.joystick 2>/dev/null | while IFS= read -r path; do
+        case "$path" in
+            */Library/MobileSubstrate/DynamicLibraries/PaopaoJoystick.dylib|*/Library/MobileSubstrate/DynamicLibraries/PaopaoJoystick.plist)
+                rm -f "$path"
+                ;;
+        esac
+    done
+
+    rm -f \
+        /Library/MobileSubstrate/DynamicLibraries/PaopaoJoystick.dylib \
+        /Library/MobileSubstrate/DynamicLibraries/PaopaoJoystick.plist \
+        /var/jb/Library/MobileSubstrate/DynamicLibraries/PaopaoJoystick.dylib \
+        /var/jb/Library/MobileSubstrate/DynamicLibraries/PaopaoJoystick.plist
+fi
+
+exit 0

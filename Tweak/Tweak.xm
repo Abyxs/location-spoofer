@@ -343,7 +343,7 @@ static void PJInstallOverlay(void) {
     PJWindow.windowLevel = UIWindowLevelAlert + 100;
     PJWindow.backgroundColor = UIColor.clearColor;
     PJWindow.rootViewController = [PJController new];
-    PJWindow.hidden = !PJJoystickEnabled();
+    PJWindow.hidden = NO;
     PJRegisterVisibilityObservers();
 }
 
