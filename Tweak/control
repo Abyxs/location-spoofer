@@ -1,6 +1,6 @@
 Package: com.paopaolabs.joystick
 Name: 泡泡悬浮摇杆
-Version: 0.1.3
+Version: 0.1.4
 Architecture: iphoneos-arm64
 Description: 跨应用悬浮摇杆，配合 AppsDump3 实时模拟步行定位。
 Maintainer: Paopao Labs

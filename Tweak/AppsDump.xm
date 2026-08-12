@@ -45,6 +45,18 @@ static void PJConsumeCommand(void) {
     if (!moving.boolValue) return;
     CLLocation *next = PJApplyOffset(PJLastLocation, north.doubleValue, east.doubleValue);
     if (!next) return;
+    NSTimeInterval elapsed = next.timestamp.timeIntervalSince1970 - PJLastLocation.timestamp.timeIntervalSince1970;
+    double distance = hypot(east.doubleValue, north.doubleValue);
+    double speed = elapsed > 0.01 ? distance / elapsed : 0;
+    double course = distance > 0.001 ? atan2(east.doubleValue, north.doubleValue) * 180.0 / M_PI : PJLastLocation.course;
+    if (course < 0) course += 360.0;
+    next = [[CLLocation alloc] initWithCoordinate:next.coordinate
+                                         altitude:next.altitude
+                               horizontalAccuracy:next.horizontalAccuracy
+                                 verticalAccuracy:next.verticalAccuracy
+                                           course:course
+                                            speed:speed
+                                        timestamp:next.timestamp];
     PJLastLocation = next;
     [simulator appendSimulatedLocation:next];
 }

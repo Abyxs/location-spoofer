@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import <math.h>
 #import "PJJoystickIPC.h"
 
 static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
@@ -24,9 +25,14 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 @property(nonatomic, strong) UIButton *speedButton;
 @property(nonatomic, strong) CADisplayLink *displayLink;
 @property(nonatomic) CGPoint direction;
+@property(nonatomic) CGPoint targetDirection;
+@property(nonatomic) CGFloat targetMagnitude;
+@property(nonatomic) CGFloat smoothedMagnitude;
 @property(nonatomic) NSInteger frameCounter;
 @property(nonatomic) NSInteger speedIndex;
 @property(nonatomic) CGPoint panelDragOrigin;
+@property(nonatomic) NSTimeInterval lastTickTimestamp;
+@property(nonatomic) NSTimeInterval sendAccumulator;
 @end
 
 @implementation PJController
@@ -190,23 +196,58 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
         dy = dy / length * radius;
     }
     self.knob.center = CGPointMake(center.x + dx, center.y + dy);
-    self.direction = CGPointMake(dx / radius, -dy / radius);
+    CGFloat magnitude = MIN(1.0, length / radius);
+    if (magnitude < 0.08) magnitude = 0;
+    CGFloat clampedLength = hypot(dx, dy);
+    self.targetDirection = clampedLength > 0.001
+        ? CGPointMake(dx / clampedLength, -dy / clampedLength)
+        : CGPointZero;
+    self.targetMagnitude = magnitude;
     if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled || gesture.state == UIGestureRecognizerStateFailed) {
-        [self stopMoving];
+        self.targetMagnitude = 0;
+        [UIView animateWithDuration:0.12 animations:^{
+            self.knob.center = center;
+        }];
+        if (!self.displayLink) [self stopMoving];
     } else if (!self.displayLink) {
         self.status.text = @"行走";
         self.status.textColor = [UIColor colorWithRed:0.25 green:0.95 blue:0.62 alpha:1];
         self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
+        self.lastTickTimestamp = 0;
+        self.sendAccumulator = 0;
         [self.displayLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
     }
 }
 
 - (void)tick:(CADisplayLink *)link {
-    self.frameCounter += 1;
-    if (self.frameCounter % 6 != 0) return;
+    NSTimeInterval timestamp = link.timestamp;
+    if (self.lastTickTimestamp <= 0) {
+        self.lastTickTimestamp = timestamp;
+        return;
+    }
+    NSTimeInterval delta = MIN(0.1, MAX(0.001, timestamp - self.lastTickTimestamp));
+    self.lastTickTimestamp = timestamp;
+
+    // Smooth direction and pressure so small finger corrections do not become jumps.
+    CGFloat blend = 1.0 - exp(-delta / 0.08);
+    self.direction = CGPointMake(
+        self.direction.x + (self.targetDirection.x - self.direction.x) * blend,
+        self.direction.y + (self.targetDirection.y - self.direction.y) * blend
+    );
+    self.smoothedMagnitude += (self.targetMagnitude - self.smoothedMagnitude) * blend;
+    if (self.targetMagnitude <= 0 && self.smoothedMagnitude < 0.015) {
+        [self stopMoving];
+        return;
+    }
+    self.sendAccumulator += delta;
+    if (self.sendAccumulator < 0.05) return;
+    NSTimeInterval sendDelta = self.sendAccumulator;
+    self.sendAccumulator = 0;
+
     static const double speeds[] = {1.4, 2.5, 5.0};
-    double step = speeds[self.speedIndex] / 10.0;
-    [self sendEast:self.direction.x * step north:self.direction.y * step moving:YES];
+    double distance = speeds[self.speedIndex] * sendDelta * self.smoothedMagnitude;
+    if (distance < 0.001) return;
+    [self sendEast:self.direction.x * distance north:self.direction.y * distance moving:YES];
 }
 
 - (void)stopMoving {
@@ -214,6 +255,11 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     self.displayLink = nil;
     self.frameCounter = 0;
     self.direction = CGPointZero;
+    self.targetDirection = CGPointZero;
+    self.targetMagnitude = 0;
+    self.smoothedMagnitude = 0;
+    self.lastTickTimestamp = 0;
+    self.sendAccumulator = 0;
     self.knob.center = CGPointMake(CGRectGetMidX(self.base.bounds), CGRectGetMidY(self.base.bounds));
     self.status.text = @"停止";
     self.status.textColor = [UIColor colorWithWhite:0.8 alpha:1];
