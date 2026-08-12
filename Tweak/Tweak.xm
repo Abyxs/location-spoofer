@@ -307,8 +307,10 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 @end
 
 static PJOverlayWindow *PJWindow;
+static void PJInstallOverlay(void);
 
 static void PJSetOverlayVisible(BOOL visible) {
+    if (visible && !PJWindow) PJInstallOverlay();
     if (!PJWindow) return;
     PJController *controller = (PJController *)PJWindow.rootViewController;
     if (!visible) [controller stopMoving];
@@ -320,6 +322,7 @@ static void PJRegisterVisibilityObservers(void) {
     static int hideToken = 0;
     if (showToken == 0) {
         notify_register_dispatch(PJOverlayShowNotification, &showToken, dispatch_get_main_queue(), ^(int unused) {
+            PJInstallOverlay();
             PJSetOverlayVisible(YES);
         });
     }
@@ -330,17 +333,17 @@ static void PJRegisterVisibilityObservers(void) {
     }
 }
 
-static void PJRefreshOverlayVisibility(void) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        PJSetOverlayVisible(PJJoystickEnabled());
-    });
-}
-
 static void PJInstallOverlay(void) {
     if (PJWindow) return;
     UIWindowScene *scene = nil;
+    for (UIWindow *window in UIApplication.sharedApplication.windows) {
+        if (window.windowScene) {
+            scene = window.windowScene;
+            break;
+        }
+    }
     for (UIScene *candidate in UIApplication.sharedApplication.connectedScenes) {
-        if ([candidate isKindOfClass:UIWindowScene.class] && candidate.activationState != UISceneActivationStateUnattached) {
+        if (!scene && [candidate isKindOfClass:UIWindowScene.class] && candidate.activationState != UISceneActivationStateUnattached) {
             scene = (UIWindowScene *)candidate;
             break;
         }
@@ -352,15 +355,26 @@ static void PJInstallOverlay(void) {
     PJWindow.backgroundColor = UIColor.clearColor;
     PJWindow.rootViewController = [PJController new];
     PJWindow.hidden = !PJJoystickEnabled();
-    PJRegisterVisibilityObservers();
+}
+
+static void PJScheduleOverlayInstall(NSInteger retriesRemaining) {
+    PJInstallOverlay();
+    if (PJWindow) {
+        PJSetOverlayVisible(PJJoystickEnabled());
+        return;
+    }
+    if (retriesRemaining <= 0) return;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        PJScheduleOverlayInstall(retriesRemaining - 1);
+    });
 }
 
 %hook SpringBoard
 - (void)applicationDidFinishLaunching:(id)application {
     %orig;
+    PJRegisterVisibilityObservers();
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        PJInstallOverlay();
-        PJRefreshOverlayVisibility();
+        PJScheduleOverlayInstall(10);
     });
 }
 %end

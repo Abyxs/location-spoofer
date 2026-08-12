@@ -68,6 +68,7 @@ static void PJInstallJoystickSwitch(UIViewController *controller) {
     if (![items containsObject:item]) {
         controller.navigationItem.rightBarButtonItems = [items arrayByAddingObject:item];
     }
+    if (toggle.isOn) notify_post(PJOverlayShowNotification);
 }
 
 static __weak CLSimulationManager *PJSimulator;
