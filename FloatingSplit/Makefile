@@ -9,6 +9,7 @@ TWEAK_NAME = PaopaoFloatingSplit
 PaopaoFloatingSplit_FILES = Tweak.xm
 PaopaoFloatingSplit_CFLAGS = -fobjc-arc
 PaopaoFloatingSplit_FRAMEWORKS = UIKit Foundation
-PaopaoFloatingSplit_PRIVATE_FRAMEWORKS = FrontBoard SpringBoardServices
+PaopaoFloatingSplit_PRIVATE_FRAMEWORKS = FrontBoard
+PaopaoFloatingSplit_LIBRARIES = sbs
 
 include $(THEOS_MAKE_PATH)/tweak.mk
