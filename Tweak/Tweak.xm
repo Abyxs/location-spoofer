@@ -15,7 +15,9 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 
 @interface PJController : UIViewController <UIGestureRecognizerDelegate>
 @property(nonatomic, strong) UIView *panel;
+@property(nonatomic, strong) UIButton *collapsedButton;
 @property(nonatomic, strong) UIButton *closeButton;
+@property(nonatomic, strong) UIButton *collapseButton;
 @property(nonatomic, strong) UIView *base;
 @property(nonatomic, strong) UIView *knob;
 @property(nonatomic, strong) UILabel *status;
@@ -48,6 +50,14 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     [self.closeButton setTitle:@"×" forState:UIControlStateNormal];
     [self.closeButton addTarget:self action:@selector(hideJoystick) forControlEvents:UIControlEventTouchUpInside];
     [self.panel addSubview:self.closeButton];
+
+    self.collapseButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.collapseButton.frame = CGRectMake(91, 7, 24, 24);
+    self.collapseButton.tintColor = [UIColor colorWithWhite:1 alpha:0.75];
+    self.collapseButton.titleLabel.font = [UIFont systemFontOfSize:18 weight:UIFontWeightRegular];
+    [self.collapseButton setTitle:@"−" forState:UIControlStateNormal];
+    [self.collapseButton addTarget:self action:@selector(collapseJoystick) forControlEvents:UIControlEventTouchUpInside];
+    [self.panel addSubview:self.collapseButton];
 
     UIView *grip = [[UIView alloc] initWithFrame:CGRectMake(51, 9, 48, 5)];
     grip.backgroundColor = [UIColor colorWithWhite:1 alpha:0.45];
@@ -91,6 +101,20 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     [self.panel addSubview:self.status];
     [self updateSpeedTitle];
 
+    self.collapsedButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.collapsedButton.frame = CGRectMake(20, 180, 52, 52);
+    self.collapsedButton.backgroundColor = [UIColor colorWithRed:0.13 green:0.75 blue:0.48 alpha:0.96];
+    self.collapsedButton.layer.cornerRadius = 26;
+    self.collapsedButton.layer.shadowColor = UIColor.blackColor.CGColor;
+    self.collapsedButton.layer.shadowOpacity = 0.3;
+    self.collapsedButton.layer.shadowRadius = 5;
+    self.collapsedButton.tintColor = UIColor.whiteColor;
+    [self.collapsedButton setTitle:@"摇" forState:UIControlStateNormal];
+    self.collapsedButton.titleLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
+    [self.collapsedButton addTarget:self action:@selector(expandJoystick) forControlEvents:UIControlEventTouchUpInside];
+    self.collapsedButton.hidden = YES;
+    [self.view addSubview:self.collapsedButton];
+
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -104,6 +128,19 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 - (void)hideJoystick {
     [self stopMoving];
     self.view.window.hidden = YES;
+}
+
+- (void)collapseJoystick {
+    [self stopMoving];
+    self.panel.hidden = YES;
+    self.collapsedButton.hidden = NO;
+    self.collapsedButton.frame = self.panel.frame;
+    self.collapsedButton.layer.cornerRadius = self.collapsedButton.bounds.size.width / 2.0;
+}
+
+- (void)expandJoystick {
+    self.panel.hidden = NO;
+    self.collapsedButton.hidden = YES;
 }
 
 - (void)dragPanel:(UIPanGestureRecognizer *)gesture {
