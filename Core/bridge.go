@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"runtime/cgo"
 	"strconv"
+	"time"
 )
 
 //export wloccore_init
@@ -123,6 +124,7 @@ func wloccore_setpatchconfig(lat, lon C.double, enabled C.int, accuracy C.int, m
 	currentEnabled = enabled != 0
 	currentAccuracy = int(accuracy)
 	currentMotionSimulationEnabled = motionEnabled != 0
+	joystickMotionUntil = time.Time{}
 	stateMu.Unlock()
 	logEvent("setpatchconfig enabled=" + strconv.FormatBool(enabled != 0) +
 		" accuracy=" + strconv.Itoa(int(accuracy)) +

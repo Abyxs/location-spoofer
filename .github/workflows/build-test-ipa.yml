@@ -1,0 +1,53 @@
+name: Build Test IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/joystick-build
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: Core/go.sum
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Test Go core
+        working-directory: Core
+        run: go test ./...
+
+      - name: Run contract tests
+        run: |
+          bash Tests/build_script_test.sh
+          bash Tests/ios_compilation_contract_test.sh
+
+      - name: Build unsigned IPA
+        run: ./build.sh
+
+      - name: Prepare artifact
+        run: mv dist/PaopaoLocationSpoofer-unsigned.ipa dist/Location-Spoofer-Joystick-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Location-Spoofer-Joystick-unsigned
+          path: dist/Location-Spoofer-Joystick-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14

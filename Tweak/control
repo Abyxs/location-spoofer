@@ -1,0 +1,9 @@
+Package: com.paopaolabs.joystick
+Name: Paopao Joystick
+Version: 0.1.0
+Architecture: iphoneos-arm64
+Description: SpringBoard floating joystick for Paopao Location Spoofer.
+Maintainer: Paopao Labs
+Author: Paopao Labs
+Section: Tweaks
+Depends: firmware (>= 15.0), ellekit

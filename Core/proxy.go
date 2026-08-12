@@ -5,6 +5,7 @@ import (
 	"context"
 	crand "crypto/rand"
 	"crypto/tls"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -28,6 +29,7 @@ var (
 	currentEnabled                 bool
 	currentAccuracy                int
 	currentMotionSimulationEnabled bool
+	joystickMotionUntil            time.Time
 	globalCACert                   *tls.Certificate
 	verifyToken                    string
 
@@ -73,6 +75,10 @@ func newProxy(cert *tls.Certificate) *goproxy.ProxyHttpServer {
 
 	// Handle non-proxy requests (e.g. Safari browsing directly to 127.0.0.1:8888)
 	proxy.NonproxyHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/joystick" {
+			handleJoystickRequest(w, r)
+			return
+		}
 		if r.URL.Path == "/cert" {
 			stateMu.Lock()
 			cert := globalCACert
@@ -95,7 +101,8 @@ func newProxy(cert *tls.Certificate) *goproxy.ProxyHttpServer {
 		}
 		if r.URL.Path == "/coords" {
 			stateMu.Lock()
-			enabled, lat, lon, accuracy, motionEnabled := currentEnabled, currentLat, currentLon, currentAccuracy, currentMotionSimulationEnabled
+			enabled, lat, lon, accuracy := currentEnabled, currentLat, currentLon, currentAccuracy
+			motionEnabled := motionSimulationEnabledLocked(time.Now())
 			stateMu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(fmt.Sprintf(`{"enabled":%t,"lat":%.6f,"lon":%.6f,"accuracy":%d,"motionSimulationEnabled":%t}`, enabled, lat, lon, accuracy, motionEnabled)))
@@ -162,6 +169,86 @@ func newProxy(cert *tls.Certificate) *goproxy.ProxyHttpServer {
 	return proxy
 }
 
+type joystickMoveRequest struct {
+	EastMeters  float64 `json:"eastMeters"`
+	NorthMeters float64 `json:"northMeters"`
+	Moving      bool    `json:"moving"`
+}
+
+type joystickMoveResponse struct {
+	Enabled                 bool    `json:"enabled"`
+	Latitude                float64 `json:"latitude"`
+	Longitude               float64 `json:"longitude"`
+	MotionSimulationEnabled bool    `json:"motionSimulationEnabled"`
+}
+
+const (
+	joystickMaxStepMeters = 5.0
+	earthRadiusMeters     = 6378137.0
+)
+
+func handleJoystickRequest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var command joystickMoveRequest
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 1024))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&command); err != nil || !validJoystickCommand(command) {
+		http.Error(w, `{"error":"invalid joystick command"}`, http.StatusBadRequest)
+		return
+	}
+
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	if !currentEnabled {
+		http.Error(w, `{"error":"virtual location is not enabled"}`, http.StatusConflict)
+		return
+	}
+
+	if command.Moving {
+		currentLat, currentLon = offsetCoordinate(currentLat, currentLon, command.NorthMeters, command.EastMeters)
+		joystickMotionUntil = time.Now().Add(750 * time.Millisecond)
+	} else {
+		joystickMotionUntil = time.Time{}
+	}
+
+	_ = json.NewEncoder(w).Encode(joystickMoveResponse{
+		Enabled:                 currentEnabled,
+		Latitude:                currentLat,
+		Longitude:               currentLon,
+		MotionSimulationEnabled: motionSimulationEnabledLocked(time.Now()),
+	})
+}
+
+func validJoystickCommand(command joystickMoveRequest) bool {
+	for _, value := range []float64{command.EastMeters, command.NorthMeters} {
+		if math.IsNaN(value) || math.IsInf(value, 0) || math.Abs(value) > joystickMaxStepMeters {
+			return false
+		}
+	}
+	return command.Moving || (command.EastMeters == 0 && command.NorthMeters == 0)
+}
+
+func offsetCoordinate(latitude, longitude, northMeters, eastMeters float64) (float64, float64) {
+	newLatitude := latitude + northMeters/earthRadiusMeters*180/math.Pi
+	newLatitude = math.Max(-85, math.Min(85, newLatitude))
+	midLatitudeRadians := (latitude + newLatitude) / 2 * math.Pi / 180
+	longitudeScale := math.Max(0.01, math.Abs(math.Cos(midLatitudeRadians)))
+	newLongitude := longitude + eastMeters/(earthRadiusMeters*longitudeScale)*180/math.Pi
+	newLongitude = math.Mod(newLongitude+540, 360) - 180
+	return newLatitude, newLongitude
+}
+
+func motionSimulationEnabledLocked(now time.Time) bool {
+	return currentMotionSimulationEnabled || now.Before(joystickMotionUntil)
+}
+
 func serveLocalRequests(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	host := strings.ToLower(req.Host)
 
@@ -222,7 +309,8 @@ func patchWlocResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Respons
 	}
 
 	stateMu.Lock()
-	enabled, lat, lon, accuracy, motionEnabled := currentEnabled, currentLat, currentLon, currentAccuracy, currentMotionSimulationEnabled
+	enabled, lat, lon, accuracy := currentEnabled, currentLat, currentLon, currentAccuracy
+	motionEnabled := motionSimulationEnabledLocked(time.Now())
 	stateMu.Unlock()
 
 	const maxPatchBodyBytes int64 = 1 << 20
@@ -340,6 +428,7 @@ func startProxy(certPEM, keyPEM []byte, lat, lon float64, enabled bool, accuracy
 	globalCACert = cert
 	currentLat, currentLon, currentEnabled, currentAccuracy = lat, lon, enabled, accuracy
 	currentMotionSimulationEnabled = motionEnabled
+	joystickMotionUntil = time.Time{}
 	stateMu.Unlock()
 
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", proxyPort))
