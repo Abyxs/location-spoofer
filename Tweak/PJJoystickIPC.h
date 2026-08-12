@@ -2,6 +2,7 @@
 #import <notify.h>
 
 static NSString *const PJSharedCommandPath = @"/var/mobile/Library/Preferences/com.paopaolabs.joystick.command.plist";
+static NSString *const PJSharedLocationPath = @"/var/mobile/Library/Preferences/com.paopaolabs.joystick.location.plist";
 static NSString *const PJPreferencesPath = @"/var/mobile/Library/Preferences/com.paopaolabs.joystick.preferences.plist";
 static const char *PJDarwinNotification = "com.paopaolabs.joystick.command";
 static const char *PJOverlayShowNotification = "com.paopaolabs.joystick.show";
@@ -27,6 +28,7 @@ static __attribute__((unused)) BOOL PJSetJoystickEnabled(BOOL enabled) {
 
 static __attribute__((unused)) BOOL PJWriteJoystickCommand(double east, double north, BOOL moving) {
     NSDictionary *command = @{
+        @"action": @"move",
         @"eastMeters": @(east),
         @"northMeters": @(north),
         @"moving": @(moving),
@@ -39,6 +41,31 @@ static __attribute__((unused)) BOOL PJWriteJoystickCommand(double east, double n
     }
     notify_post(PJDarwinNotification);
     return YES;
+}
+
+static __attribute__((unused)) BOOL PJWriteAbsoluteLocation(double latitude, double longitude) {
+    NSDictionary *command = @{
+        @"action": @"set",
+        @"latitude": @(latitude),
+        @"longitude": @(longitude),
+        @"timestamp": @([NSDate date].timeIntervalSince1970)
+    };
+    NSData *data = [NSPropertyListSerialization dataWithPropertyList:command format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil];
+    if (!data || ![data writeToFile:PJSharedCommandPath options:NSDataWritingAtomic error:nil]) return NO;
+    notify_post(PJDarwinNotification);
+    return YES;
+}
+
+static __attribute__((unused)) void PJWriteCurrentLocation(double latitude, double longitude) {
+    [@{
+        @"latitude": @(latitude),
+        @"longitude": @(longitude),
+        @"timestamp": @([NSDate date].timeIntervalSince1970)
+    } writeToFile:PJSharedLocationPath atomically:YES];
+}
+
+static __attribute__((unused)) NSDictionary *PJReadCurrentLocation(void) {
+    return [NSDictionary dictionaryWithContentsOfFile:PJSharedLocationPath];
 }
 
 static __attribute__((unused)) NSDictionary *PJReadJoystickCommand(void) {

@@ -9,7 +9,7 @@ TWEAK_NAME = PaopaoJoystickSpringBoard PaopaoJoystickAppsDump
 
 PaopaoJoystickSpringBoard_FILES = Tweak.xm
 PaopaoJoystickSpringBoard_CFLAGS = -fobjc-arc
-PaopaoJoystickSpringBoard_FRAMEWORKS = UIKit Foundation
+PaopaoJoystickSpringBoard_FRAMEWORKS = UIKit Foundation MapKit CoreLocation
 
 PaopaoJoystickAppsDump_FILES = AppsDump.xm
 PaopaoJoystickAppsDump_CFLAGS = -fobjc-arc

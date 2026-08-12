@@ -100,9 +100,28 @@ static void PJConsumeCommand(void) {
     NSNumber *north = command[@"northMeters"];
     NSNumber *moving = command[@"moving"];
     NSNumber *timestamp = command[@"timestamp"];
-    if (!simulator || !east || !north || !moving || !timestamp) return;
+    if (!simulator || !timestamp) return;
     if (fabs(timestamp.doubleValue - NSDate.date.timeIntervalSince1970) > 2.0) return;
     if (!PJLastLocation) return;
+    if ([command[@"action"] isEqualToString:@"set"]) {
+        NSNumber *latitude = command[@"latitude"];
+        NSNumber *longitude = command[@"longitude"];
+        if (!latitude || !longitude) return;
+        CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake(latitude.doubleValue, longitude.doubleValue);
+        if (!CLLocationCoordinate2DIsValid(coordinate)) return;
+        CLLocation *selected = [[CLLocation alloc] initWithCoordinate:coordinate
+                                                             altitude:PJLastLocation.altitude
+                                                   horizontalAccuracy:MAX(1.0, PJLastLocation.horizontalAccuracy)
+                                                     verticalAccuracy:MAX(1.0, PJLastLocation.verticalAccuracy)
+                                                               course:-1
+                                                                speed:0
+                                                            timestamp:[NSDate date]];
+        PJLastLocation = selected;
+        PJWriteCurrentLocation(coordinate.latitude, coordinate.longitude);
+        [simulator appendSimulatedLocation:selected];
+        return;
+    }
+    if (!east || !north || !moving) return;
     if (!moving.boolValue) return;
     CLLocation *next = PJApplyOffset(PJLastLocation, north.doubleValue, east.doubleValue);
     if (!next) return;
@@ -138,7 +157,10 @@ static void PJInstallAppsDumpObserver(CLSimulationManager *simulator) {
 }
 
 - (void)appendSimulatedLocation:(CLLocation *)location {
-    if (location) PJLastLocation = location;
+    if (location) {
+        PJLastLocation = location;
+        PJWriteCurrentLocation(location.coordinate.latitude, location.coordinate.longitude);
+    }
     %orig;
 }
 

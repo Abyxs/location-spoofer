@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import <MapKit/MapKit.h>
 #import <math.h>
 #import "PJJoystickIPC.h"
 
@@ -23,6 +24,10 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 @property(nonatomic, strong) UIView *knob;
 @property(nonatomic, strong) UILabel *status;
 @property(nonatomic, strong) UIButton *speedButton;
+@property(nonatomic, strong) UIButton *mapButton;
+@property(nonatomic, strong) UIView *mapPanel;
+@property(nonatomic, strong) MKMapView *mapView;
+@property(nonatomic, strong) MKPointAnnotation *selectedAnnotation;
 @property(nonatomic, strong) CADisplayLink *displayLink;
 @property(nonatomic) CGPoint direction;
 @property(nonatomic) CGPoint targetDirection;
@@ -114,7 +119,17 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     [self.speedButton addTarget:self action:@selector(changeSpeed) forControlEvents:UIControlEventTouchUpInside];
     [self.panel addSubview:self.speedButton];
 
-    self.status = [[UILabel alloc] initWithFrame:CGRectMake(93, 145, 42, 32)];
+    self.mapButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.mapButton.frame = CGRectMake(93, 145, 42, 32);
+    self.mapButton.backgroundColor = [UIColor colorWithWhite:1 alpha:0.12];
+    self.mapButton.layer.cornerRadius = 8;
+    self.mapButton.tintColor = UIColor.whiteColor;
+    self.mapButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
+    [self.mapButton setTitle:@"地图" forState:UIControlStateNormal];
+    [self.mapButton addTarget:self action:@selector(showMapPanel) forControlEvents:UIControlEventTouchUpInside];
+    [self.panel addSubview:self.mapButton];
+
+    self.status = [[UILabel alloc] initWithFrame:CGRectMake(93, 178, 42, 12)];
     self.status.text = @"停止";
     self.status.textColor = [UIColor colorWithWhite:0.8 alpha:1];
     self.status.textAlignment = NSTextAlignmentCenter;
@@ -139,6 +154,94 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     self.collapsedButton.hidden = YES;
     [self.view addSubview:self.collapsedButton];
 
+    [self buildMapPanel];
+
+}
+
+- (void)buildMapPanel {
+    self.mapPanel = [[UIView alloc] initWithFrame:CGRectZero];
+    self.mapPanel.backgroundColor = [UIColor colorWithWhite:0.04 alpha:0.72];
+    self.mapPanel.hidden = YES;
+    [self.view addSubview:self.mapPanel];
+
+    self.mapView = [[MKMapView alloc] initWithFrame:CGRectZero];
+    self.mapView.alpha = 0.88;
+    self.mapView.showsCompass = YES;
+    self.mapView.showsScale = YES;
+    [self.mapPanel addSubview:self.mapView];
+
+    UIButton *backButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    backButton.frame = CGRectMake(14, 12, 64, 36);
+    backButton.backgroundColor = [UIColor colorWithWhite:0.05 alpha:0.76];
+    backButton.layer.cornerRadius = 8;
+    backButton.tintColor = UIColor.whiteColor;
+    [backButton setTitle:@"摇杆" forState:UIControlStateNormal];
+    [backButton addTarget:self action:@selector(hideMapPanel) forControlEvents:UIControlEventTouchUpInside];
+    [self.mapPanel addSubview:backButton];
+
+    UILabel *hint = [[UILabel alloc] initWithFrame:CGRectZero];
+    hint.tag = 2020;
+    hint.text = @"长按地图选择位置";
+    hint.textAlignment = NSTextAlignmentCenter;
+    hint.textColor = UIColor.whiteColor;
+    hint.backgroundColor = [UIColor colorWithWhite:0.05 alpha:0.70];
+    hint.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    hint.layer.cornerRadius = 8;
+    hint.clipsToBounds = YES;
+    [self.mapPanel addSubview:hint];
+
+    UILongPressGestureRecognizer *press = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(selectMapLocation:)];
+    press.minimumPressDuration = 0.55;
+    [self.mapView addGestureRecognizer:press];
+}
+
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    self.mapPanel.frame = self.view.bounds;
+    self.mapView.frame = self.mapPanel.bounds;
+    UILabel *hint = (UILabel *)[self.mapPanel viewWithTag:2020];
+    CGFloat width = MIN(180, self.view.bounds.size.width - 32);
+    hint.frame = CGRectMake((self.view.bounds.size.width - width) / 2, self.view.safeAreaInsets.top + 12, width, 36);
+}
+
+- (void)showMapPanel {
+    [self stopMoving];
+    NSDictionary *location = PJReadCurrentLocation();
+    NSNumber *latitude = location[@"latitude"];
+    NSNumber *longitude = location[@"longitude"];
+    if (latitude && longitude) {
+        CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake(latitude.doubleValue, longitude.doubleValue);
+        [self.mapView setRegion:MKCoordinateRegionMakeWithDistance(coordinate, 1200, 1200) animated:NO];
+        [self updateSelectedAnnotation:coordinate];
+    }
+    self.panel.hidden = YES;
+    self.collapsedButton.hidden = YES;
+    self.mapPanel.hidden = NO;
+}
+
+- (void)hideMapPanel {
+    self.mapPanel.hidden = YES;
+    self.panel.hidden = NO;
+}
+
+- (void)selectMapLocation:(UILongPressGestureRecognizer *)gesture {
+    if (gesture.state != UIGestureRecognizerStateBegan) return;
+    CGPoint point = [gesture locationInView:self.mapView];
+    CLLocationCoordinate2D coordinate = [self.mapView convertPoint:point toCoordinateFromView:self.mapView];
+    if (!CLLocationCoordinate2DIsValid(coordinate)) return;
+    [self updateSelectedAnnotation:coordinate];
+    PJWriteAbsoluteLocation(coordinate.latitude, coordinate.longitude);
+    UIImpactFeedbackGenerator *feedback = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+    [feedback impactOccurred];
+}
+
+- (void)updateSelectedAnnotation:(CLLocationCoordinate2D)coordinate {
+    if (!self.selectedAnnotation) {
+        self.selectedAnnotation = [MKPointAnnotation new];
+        self.selectedAnnotation.title = @"虚拟位置";
+        [self.mapView addAnnotation:self.selectedAnnotation];
+    }
+    self.selectedAnnotation.coordinate = coordinate;
 }
 
 - (void)viewDidAppear:(BOOL)animated {
