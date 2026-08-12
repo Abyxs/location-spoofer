@@ -239,7 +239,11 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     self.mapView.alpha = routeOnly ? 0.9 : 0.58;
     self.mapView.overrideUserInterfaceStyle = routeOnly ? UIUserInterfaceStyleDark : UIUserInterfaceStyleUnspecified;
     self.mapView.showsBuildings = !routeOnly;
-    self.mapView.showsPointsOfInterest = !routeOnly;
+    if (@available(iOS 13.0, *)) {
+        MKStandardMapConfiguration *configuration = [MKStandardMapConfiguration new];
+        configuration.pointOfInterestFilter = routeOnly ? [MKPointOfInterestFilter excludingAllCategories] : nil;
+        self.mapView.preferredConfiguration = configuration;
+    }
     self.mapView.layer.compositingFilter = routeOnly ? @"screenBlendMode" : nil;
 }
 
