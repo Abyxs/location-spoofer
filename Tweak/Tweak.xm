@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import "PJJoystickIPC.h"
 
 static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 
@@ -159,6 +160,13 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 }
 
 - (void)sendEast:(double)east north:(double)north moving:(BOOL)moving {
+	if (PJWriteJoystickCommand(east, north, moving)) {
+		if (!moving) return;
+		self.status.text = @"行走";
+		self.status.textColor = [UIColor colorWithRed:0.25 green:0.95 blue:0.62 alpha:1];
+		return;
+	}
+	/* Keep the local-proxy path usable on devices without AppsDump3. */
     NSURL *url = [NSURL URLWithString:PJEndpoint];
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     request.HTTPMethod = @"POST";

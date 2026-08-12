@@ -1,0 +1,33 @@
+name: Build RootHide Joystick Tweak
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/joystick-build
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Theos
+        run: |
+          brew install ldid
+          git clone --recursive --depth=1 https://github.com/theos/theos.git "$RUNNER_TEMP/theos"
+          echo "THEOS=$RUNNER_TEMP/theos" >> "$GITHUB_ENV"
+
+      - name: Build RootHide package
+        working-directory: Tweak
+        run: make package FINALPACKAGE=1
+
+      - name: Upload DEB
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaopaoJoystick-roothide
+          path: Tweak/packages/*.deb
+          if-no-files-found: error
+          retention-days: 14

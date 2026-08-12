@@ -6,8 +6,8 @@ INSTALL_TARGET_PROCESSES = SpringBoard
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = PaopaoJoystick
-PaopaoJoystick_FILES = Tweak.xm
+PaopaoJoystick_FILES = Tweak.xm AppsDump.xm
 PaopaoJoystick_CFLAGS = -fobjc-arc
-PaopaoJoystick_FRAMEWORKS = UIKit Foundation
+PaopaoJoystick_FRAMEWORKS = UIKit Foundation CoreLocation
 
 include $(THEOS_MAKE_PATH)/tweak.mk

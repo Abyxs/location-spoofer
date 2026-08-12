@@ -2,7 +2,7 @@
 
 ## 构建安装
 
-需要 macOS、Theos、RootHide Bootstrap 工具链和可访问设备的 SSH。
+需要 macOS、Theos、RootHide Bootstrap 工具链和可访问设备的 SSH。此版本同时支持 AppsDump3 4.0.x 的系统模拟定位。
 
 ```sh
 cd Tweak
@@ -18,4 +18,6 @@ make install
 2. 切换到目标应用，拖动悬浮摇杆；底部按钮切换步行、快走和跑步速度。
 3. 松开摇杆会停止移动；显示“未连接”表示主应用代理未运行或虚拟定位未开启。
 
-仅监听 `127.0.0.1:8888`，每次更新最大位移 5 米。重启主应用后会恢复应用内最后保存的位置。
+安装后请先在 AppsDump3 内开启一次虚拟定位，再切换到目标 App。摇杆通过 Darwin 通知把位移交给 AppsDump3 的 `CLSimulationManager`，不需要 Wi-Fi 代理或断网。
+
+兼容性：AppsDump3 4.0.6 的类和选择器已确认；若后续版本更改 `appendSimulatedLocation:`，摇杆会保持显示但不会移动位置。
