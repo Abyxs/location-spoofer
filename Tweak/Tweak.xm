@@ -27,8 +27,7 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 @property(nonatomic, strong) UIButton *mapButton;
 @property(nonatomic, strong) UIView *mapPanel;
 @property(nonatomic, strong) MKMapView *mapView;
-@property(nonatomic, strong) MKPointAnnotation *selectedAnnotation;
-@property(nonatomic, strong) MKPointAnnotation *currentAnnotation;
+@property(nonatomic, strong) MKPointAnnotation *locationAnnotation;
 @property(nonatomic, strong) UIButton *recenterButton;
 @property(nonatomic) int locationUpdateToken;
 @property(nonatomic, strong) CADisplayLink *displayLink;
@@ -241,12 +240,12 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     if (!latitude || !longitude) return;
     CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake(latitude.doubleValue, longitude.doubleValue);
     if (!CLLocationCoordinate2DIsValid(coordinate)) return;
-    if (!self.currentAnnotation) {
-        self.currentAnnotation = [MKPointAnnotation new];
-        self.currentAnnotation.title = @"当前位置";
-        [self.mapView addAnnotation:self.currentAnnotation];
+    if (!self.locationAnnotation) {
+        self.locationAnnotation = [MKPointAnnotation new];
+        self.locationAnnotation.title = @"虚拟位置";
+        [self.mapView addAnnotation:self.locationAnnotation];
     }
-    self.currentAnnotation.coordinate = coordinate;
+    self.locationAnnotation.coordinate = coordinate;
     if (centerMap) [self.mapView setRegion:MKCoordinateRegionMakeWithDistance(coordinate, 1200, 1200) animated:YES];
 }
 
@@ -260,19 +259,19 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     CGPoint point = [gesture locationInView:self.mapView];
     CLLocationCoordinate2D coordinate = [self.mapView convertPoint:point toCoordinateFromView:self.mapView];
     if (!CLLocationCoordinate2DIsValid(coordinate)) return;
-    [self updateSelectedAnnotation:coordinate];
+    [self updateLocationAnnotation:coordinate];
     PJWriteAbsoluteLocation(coordinate.latitude, coordinate.longitude);
     UIImpactFeedbackGenerator *feedback = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
     [feedback impactOccurred];
 }
 
-- (void)updateSelectedAnnotation:(CLLocationCoordinate2D)coordinate {
-    if (!self.selectedAnnotation) {
-        self.selectedAnnotation = [MKPointAnnotation new];
-        self.selectedAnnotation.title = @"虚拟位置";
-        [self.mapView addAnnotation:self.selectedAnnotation];
+- (void)updateLocationAnnotation:(CLLocationCoordinate2D)coordinate {
+    if (!self.locationAnnotation) {
+        self.locationAnnotation = [MKPointAnnotation new];
+        self.locationAnnotation.title = @"虚拟位置";
+        [self.mapView addAnnotation:self.locationAnnotation];
     }
-    self.selectedAnnotation.coordinate = coordinate;
+    self.locationAnnotation.coordinate = coordinate;
 }
 
 - (void)viewDidAppear:(BOOL)animated {
