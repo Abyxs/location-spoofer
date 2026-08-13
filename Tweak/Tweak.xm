@@ -8,11 +8,10 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 static NSString *const PJMapPreferencesPath = @"/var/mobile/Library/Preferences/com.paopaolabs.joystick.map.plist";
 
 typedef struct {
-    float m11, m12, m13, m14;
-    float m21, m22, m23, m24;
-    float m31, m32, m33, m34;
-    float m41, m42, m43, m44;
-    float m51, m52, m53, m54;
+    float m11, m12, m13, m14, m15;
+    float m21, m22, m23, m24, m25;
+    float m31, m32, m33, m34, m35;
+    float m41, m42, m43, m44, m45;
 } PJCAColorMatrix;
 
 @interface NSValue (PJCAColorMatrix)
@@ -312,11 +311,10 @@ typedef struct {
             // Dark MapKit land and water stay below this luminance threshold;
             // roads and labels retain their original RGB while gaining alpha.
             PJCAColorMatrix matrix = {
-                1, 0, 0, 0.70f,
-                0, 1, 0, 2.30f,
-                0, 0, 1, 0.23f,
-                0, 0, 0, 0,
-                0, 0, 0, -0.66f
+                1, 0, 0, 0, 0,
+                0, 1, 0, 0, 0,
+                0, 0, 1, 0, 0,
+                1.40f, -0.80f, 0.80f, 0, -0.50f
             };
             @try {
                 PJCAFilter *filter = [filterClass filterWithType:@"colorMatrix"];
