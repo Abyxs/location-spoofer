@@ -44,6 +44,7 @@ static NSString *const PJMapPreferencesPath = @"/var/mobile/Library/Preferences/
 @property(nonatomic) NSInteger frameCounter;
 @property(nonatomic) NSInteger speedIndex;
 @property(nonatomic) CGPoint panelDragOrigin;
+@property(nonatomic) CGPoint collapsedDragOrigin;
 @property(nonatomic) NSTimeInterval lastTickTimestamp;
 @property(nonatomic) NSTimeInterval sendAccumulator;
 @property(nonatomic) BOOL collapsedMap;
@@ -161,6 +162,9 @@ static NSString *const PJMapPreferencesPath = @"/var/mobile/Library/Preferences/
     [self.collapsedButton setTitle:@"摇" forState:UIControlStateNormal];
     self.collapsedButton.titleLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
     [self.collapsedButton addTarget:self action:@selector(expandJoystick) forControlEvents:UIControlEventTouchUpInside];
+    UILongPressGestureRecognizer *collapsedDrag = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(dragCollapsedButton:)];
+    collapsedDrag.minimumPressDuration = 0.35;
+    [self.collapsedButton addGestureRecognizer:collapsedDrag];
     self.collapsedButton.hidden = YES;
     [self.view addSubview:self.collapsedButton];
 
@@ -432,6 +436,23 @@ static NSString *const PJMapPreferencesPath = @"/var/mobile/Library/Preferences/
         return;
     }
     self.panel.hidden = NO;
+}
+
+- (void)dragCollapsedButton:(UILongPressGestureRecognizer *)gesture {
+    if (gesture.state == UIGestureRecognizerStateBegan) {
+        self.collapsedDragOrigin = self.collapsedButton.center;
+        self.collapsedButton.highlighted = YES;
+    }
+    CGPoint delta = [gesture translationInView:self.view];
+    UIEdgeInsets insets = self.view.safeAreaInsets;
+    CGFloat radius = CGRectGetWidth(self.collapsedButton.bounds) / 2.0;
+    CGFloat x = MIN(MAX(radius + 8, self.collapsedDragOrigin.x + delta.x), self.view.bounds.size.width - radius - 8);
+    CGFloat y = MIN(MAX(insets.top + radius + 8, self.collapsedDragOrigin.y + delta.y),
+                    self.view.bounds.size.height - insets.bottom - radius - 8);
+    self.collapsedButton.center = CGPointMake(x, y);
+    if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled || gesture.state == UIGestureRecognizerStateFailed) {
+        self.collapsedButton.highlighted = NO;
+    }
 }
 
 - (void)dragPanel:(UIPanGestureRecognizer *)gesture {
