@@ -1,7 +1,9 @@
 #!/bin/sh
 
 if [ "$1" = "upgrade" ] || [ "$1" = "install" ]; then
-    dpkg -L com.paopaolabs.joystick 2>/dev/null | while IFS= read -r path; do
+    for package in ppjoy com.paopaolabs.joystick; do
+        dpkg -L "$package" 2>/dev/null
+    done | while IFS= read -r path; do
         case "$path" in
             */Library/MobileSubstrate/DynamicLibraries/PaopaoJoystick.dylib|*/Library/MobileSubstrate/DynamicLibraries/PaopaoJoystick.plist)
                 rm -f "$path"

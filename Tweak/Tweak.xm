@@ -311,12 +311,12 @@ typedef struct {
         Class filterClass = NSClassFromString(@"CAFilter");
         if ([filterClass respondsToSelector:@selector(filterWithType:)]) {
             // Dark MapKit land and water stay below this luminance threshold;
-            // retained roads and labels use a readable deep charcoal color.
+            // retained roads and labels use a near-black high-contrast color.
             PJCAColorMatrix matrix = {
-                0, 0, 0, 0, 0.08f,
-                0, 0, 0, 0, 0.10f,
-                0, 0, 0, 0, 0.12f,
-                2.00f, -1.30f, 0.20f, 0, -0.40f
+                0, 0, 0, 0, 0.01f,
+                0, 0, 0, 0, 0.01f,
+                0, 0, 0, 0, 0.01f,
+                1.80f, -1.00f, 0.40f, 0, -0.16f
             };
             @try {
                 PJCAFilter *filter = [filterClass filterWithType:@"colorMatrix"];
