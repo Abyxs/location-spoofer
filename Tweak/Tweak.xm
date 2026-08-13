@@ -4,6 +4,7 @@
 #import "PJJoystickIPC.h"
 
 static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
+static NSString *const PJMapPreferencesPath = @"/var/mobile/Library/Preferences/com.paopaolabs.joystick.map.plist";
 
 @interface PJOverlayWindow : UIWindow
 @end
@@ -30,6 +31,9 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 @property(nonatomic, strong) MKPointAnnotation *locationAnnotation;
 @property(nonatomic, strong) UIButton *recenterButton;
 @property(nonatomic, strong) UISegmentedControl *mapModeControl;
+@property(nonatomic, strong) UIView *opacityControl;
+@property(nonatomic, strong) UISlider *opacitySlider;
+@property(nonatomic, strong) UILabel *opacityLabel;
 @property(nonatomic) int locationUpdateToken;
 @property(nonatomic, strong) CADisplayLink *displayLink;
 @property(nonatomic) CGPoint direction;
@@ -174,14 +178,38 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     self.mapView.showsScale = YES;
     [self.mapPanel addSubview:self.mapView];
 
+    NSDictionary *mapPreferences = [NSDictionary dictionaryWithContentsOfFile:PJMapPreferencesPath];
+    CGFloat savedOpacity = [mapPreferences[@"opacity"] doubleValue];
+    if (savedOpacity < 0.2 || savedOpacity > 1.0) savedOpacity = 0.58;
+    self.mapView.alpha = savedOpacity;
+
     self.mapModeControl = [[UISegmentedControl alloc] initWithItems:@[@"半透明", @"仅路线"]];
-    self.mapModeControl.selectedSegmentIndex = 0;
+    self.mapModeControl.selectedSegmentIndex = [mapPreferences[@"mode"] integerValue] == 1 ? 1 : 0;
     self.mapModeControl.backgroundColor = [UIColor colorWithWhite:0.05 alpha:0.72];
     self.mapModeControl.selectedSegmentTintColor = [UIColor colorWithWhite:1 alpha:0.24];
     [self.mapModeControl setTitleTextAttributes:@{NSForegroundColorAttributeName: UIColor.whiteColor}
                                       forState:UIControlStateNormal];
     [self.mapModeControl addTarget:self action:@selector(changeMapMode:) forControlEvents:UIControlEventValueChanged];
     [self.mapPanel addSubview:self.mapModeControl];
+
+    self.opacityControl = [[UIView alloc] initWithFrame:CGRectZero];
+    self.opacityControl.backgroundColor = [UIColor colorWithWhite:0.05 alpha:0.78];
+    self.opacityControl.layer.cornerRadius = 8;
+    [self.mapPanel addSubview:self.opacityControl];
+
+    self.opacityLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    self.opacityLabel.textColor = UIColor.whiteColor;
+    self.opacityLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
+    [self.opacityControl addSubview:self.opacityLabel];
+
+    self.opacitySlider = [[UISlider alloc] initWithFrame:CGRectZero];
+    self.opacitySlider.minimumValue = 0.2;
+    self.opacitySlider.maximumValue = 1.0;
+    self.opacitySlider.value = savedOpacity;
+    self.opacitySlider.minimumTrackTintColor = [UIColor colorWithRed:0.25 green:0.92 blue:0.60 alpha:1];
+    [self.opacitySlider addTarget:self action:@selector(changeMapOpacity:) forControlEvents:UIControlEventValueChanged];
+    [self.opacityControl addSubview:self.opacitySlider];
+    [self updateOpacityLabel];
 
     UIButton *backButton = [UIButton buttonWithType:UIButtonTypeSystem];
     backButton.frame = CGRectMake(14, 12, 64, 36);
@@ -216,6 +244,13 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     press.minimumPressDuration = 0.55;
     [self.mapView addGestureRecognizer:press];
 
+    UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(doubleTapMap:)];
+    doubleTap.numberOfTapsRequired = 2;
+    doubleTap.cancelsTouchesInView = YES;
+    [self.mapView addGestureRecognizer:doubleTap];
+
+    [self changeMapMode:self.mapModeControl];
+
     __weak PJController *weakSelf = self;
     notify_register_dispatch(PJLocationUpdateNotification, &_locationUpdateToken, dispatch_get_main_queue(), ^(int token) {
         [weakSelf refreshCurrentLocation:NO];
@@ -232,22 +267,65 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
     self.mapModeControl.frame = CGRectMake((self.view.bounds.size.width - 150) / 2, top, 150, 36);
     hint.frame = CGRectMake((self.view.bounds.size.width - width) / 2, top + 46, width, 36);
     self.recenterButton.frame = CGRectMake(self.view.bounds.size.width - 60, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 60, 44, 44);
+    self.opacityControl.frame = CGRectMake(16, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 60, 190, 44);
+    self.opacityLabel.frame = CGRectMake(10, 0, 70, 44);
+    self.opacitySlider.frame = CGRectMake(76, 7, 104, 30);
 }
 
 - (void)changeMapMode:(UISegmentedControl *)control {
     BOOL routeOnly = control.selectedSegmentIndex == 1;
-    self.mapView.alpha = routeOnly ? 0.9 : 0.58;
     self.mapView.overrideUserInterfaceStyle = routeOnly ? UIUserInterfaceStyleDark : UIUserInterfaceStyleUnspecified;
     self.mapView.showsBuildings = !routeOnly;
     self.mapView.layer.compositingFilter = routeOnly ? @"screenBlendMode" : nil;
+    [self saveMapState];
+}
+
+- (void)changeMapOpacity:(UISlider *)slider {
+    self.mapView.alpha = slider.value;
+    [self updateOpacityLabel];
+}
+
+- (void)updateOpacityLabel {
+    self.opacityLabel.text = [NSString stringWithFormat:@"透明度 %ld%%", (long)lrint(self.opacitySlider.value * 100)];
+}
+
+- (void)saveMapState {
+    MKMapCamera *camera = self.mapView.camera;
+    if (!camera || !CLLocationCoordinate2DIsValid(camera.centerCoordinate)) return;
+    [@{
+        @"latitude": @(camera.centerCoordinate.latitude),
+        @"longitude": @(camera.centerCoordinate.longitude),
+        @"altitude": @(camera.altitude),
+        @"pitch": @(camera.pitch),
+        @"heading": @(camera.heading),
+        @"opacity": @(self.opacitySlider.value),
+        @"mode": @(self.mapModeControl.selectedSegmentIndex)
+    } writeToFile:PJMapPreferencesPath atomically:YES];
+}
+
+- (BOOL)restoreMapState {
+    NSDictionary *preferences = [NSDictionary dictionaryWithContentsOfFile:PJMapPreferencesPath];
+    NSNumber *latitude = preferences[@"latitude"];
+    NSNumber *longitude = preferences[@"longitude"];
+    NSNumber *altitude = preferences[@"altitude"];
+    if (!latitude || !longitude || !altitude) return NO;
+    CLLocationCoordinate2D center = CLLocationCoordinate2DMake(latitude.doubleValue, longitude.doubleValue);
+    if (!CLLocationCoordinate2DIsValid(center) || altitude.doubleValue <= 0) return NO;
+    MKMapCamera *camera = [MKMapCamera cameraLookingAtCenterCoordinate:center
+                                                     fromDistance:altitude.doubleValue
+                                                            pitch:[preferences[@"pitch"] doubleValue]
+                                                          heading:[preferences[@"heading"] doubleValue]];
+    [self.mapView setCamera:camera animated:NO];
+    return YES;
 }
 
 - (void)showMapPanel {
     [self stopMoving];
-    [self refreshCurrentLocation:YES];
     self.panel.hidden = YES;
     self.collapsedButton.hidden = YES;
     self.mapPanel.hidden = NO;
+    BOOL restored = [self restoreMapState];
+    [self refreshCurrentLocation:!restored];
 }
 
 - (void)recenterMap {
@@ -271,8 +349,19 @@ static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 }
 
 - (void)hideMapPanel {
+    [self saveMapState];
     self.mapPanel.hidden = YES;
     self.panel.hidden = NO;
+}
+
+- (void)doubleTapMap:(UITapGestureRecognizer *)gesture {
+    if (gesture.state != UIGestureRecognizerStateRecognized) return;
+    [self saveMapState];
+    self.mapPanel.hidden = YES;
+    self.panel.hidden = YES;
+    CGPoint origin = self.panel.frame.origin;
+    self.collapsedButton.frame = CGRectMake(origin.x, origin.y, 48, 48);
+    self.collapsedButton.hidden = NO;
 }
 
 - (void)selectMapLocation:(UILongPressGestureRecognizer *)gesture {
