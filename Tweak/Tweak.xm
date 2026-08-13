@@ -443,7 +443,8 @@ static NSString *const PJMapPreferencesPath = @"/var/mobile/Library/Preferences/
         self.collapsedDragOrigin = self.collapsedButton.center;
         self.collapsedButton.highlighted = YES;
     }
-    CGPoint delta = [gesture translationInView:self.view];
+    CGPoint location = [gesture locationInView:self.view];
+    CGPoint delta = CGPointMake(location.x - self.collapsedDragOrigin.x, location.y - self.collapsedDragOrigin.y);
     UIEdgeInsets insets = self.view.safeAreaInsets;
     CGFloat radius = CGRectGetWidth(self.collapsedButton.bounds) / 2.0;
     CGFloat x = MIN(MAX(radius + 8, self.collapsedDragOrigin.x + delta.x), self.view.bounds.size.width - radius - 8);
