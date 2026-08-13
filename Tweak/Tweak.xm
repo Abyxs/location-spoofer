@@ -64,6 +64,8 @@ typedef struct {
 @property(nonatomic) NSTimeInterval lastTickTimestamp;
 @property(nonatomic) NSTimeInterval sendAccumulator;
 @property(nonatomic) BOOL collapsedMap;
+@property(nonatomic) CGPoint collapsedButtonCenter;
+@property(nonatomic) BOOL hasCollapsedButtonCenter;
 @end
 
 @implementation PJController
@@ -415,8 +417,11 @@ typedef struct {
     self.collapsedMap = YES;
     self.mapPanel.hidden = YES;
     self.panel.hidden = YES;
-    CGPoint origin = self.panel.frame.origin;
-    self.collapsedButton.frame = CGRectMake(origin.x, origin.y, 48, 48);
+    if (!self.hasCollapsedButtonCenter) {
+        self.collapsedButtonCenter = CGPointMake(CGRectGetMidX(self.panel.frame), CGRectGetMidY(self.panel.frame));
+        self.hasCollapsedButtonCenter = YES;
+    }
+    self.collapsedButton.center = self.collapsedButtonCenter;
     self.collapsedButton.hidden = NO;
 }
 
@@ -457,10 +462,13 @@ typedef struct {
 - (void)collapseJoystick {
     [self stopMoving];
     self.collapsedMap = NO;
-    CGPoint origin = self.panel.frame.origin;
     self.panel.hidden = YES;
     self.collapsedButton.hidden = NO;
-    self.collapsedButton.frame = CGRectMake(origin.x, origin.y, 48, 48);
+    if (!self.hasCollapsedButtonCenter) {
+        self.collapsedButtonCenter = CGPointMake(CGRectGetMidX(self.panel.frame), CGRectGetMidY(self.panel.frame));
+        self.hasCollapsedButtonCenter = YES;
+    }
+    self.collapsedButton.center = self.collapsedButtonCenter;
     self.collapsedButton.layer.cornerRadius = 24;
 }
 
@@ -488,6 +496,8 @@ typedef struct {
     CGFloat y = MIN(MAX(insets.top + radius + 8, self.collapsedDragOrigin.y + delta.y),
                     self.view.bounds.size.height - insets.bottom - radius - 8);
     self.collapsedButton.center = CGPointMake(x, y);
+    self.collapsedButtonCenter = self.collapsedButton.center;
+    self.hasCollapsedButtonCenter = YES;
     if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled || gesture.state == UIGestureRecognizerStateFailed) {
         self.collapsedButton.highlighted = NO;
     }
