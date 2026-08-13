@@ -1,9 +1,11 @@
 Package: ppjoy
 Name: 泡泡悬浮摇杆
-Version: 0.4.0
+Version: 0.4.1
 Architecture: iphoneos-arm64
 Description: 跨应用悬浮摇杆，配合 AppsDump3 实时模拟步行定位。
 Maintainer: Paopao Labs
 Author: Paopao Labs
 Section: Tweaks
 Depends: firmware (>= 15.0), ellekit
+Conflicts: com.paopaolabs.joystick
+Replaces: com.paopaolabs.joystick
