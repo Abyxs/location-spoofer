@@ -314,7 +314,7 @@ typedef struct {
                 1, 0, 0, 0, 0,
                 0, 1, 0, 0, 0,
                 0, 0, 1, 0, 0,
-                1.40f, -0.80f, 0.80f, 0, -0.50f
+                2.00f, -1.30f, 0.20f, 0, -0.40f
             };
             @try {
                 PJCAFilter *filter = [filterClass filterWithType:@"colorMatrix"];
