@@ -30,6 +30,7 @@ static NSString *const PJMapPreferencesPath = @"/var/mobile/Library/Preferences/
 @property(nonatomic, strong) MKMapView *mapView;
 @property(nonatomic, strong) MKPointAnnotation *locationAnnotation;
 @property(nonatomic, strong) UIButton *recenterButton;
+@property(nonatomic, strong) UIButton *minimizeMapButton;
 @property(nonatomic, strong) UISegmentedControl *mapModeControl;
 @property(nonatomic, strong) UIView *opacityControl;
 @property(nonatomic, strong) UISlider *opacitySlider;
@@ -45,6 +46,7 @@ static NSString *const PJMapPreferencesPath = @"/var/mobile/Library/Preferences/
 @property(nonatomic) CGPoint panelDragOrigin;
 @property(nonatomic) NSTimeInterval lastTickTimestamp;
 @property(nonatomic) NSTimeInterval sendAccumulator;
+@property(nonatomic) BOOL collapsedMap;
 @end
 
 @implementation PJController
@@ -229,6 +231,15 @@ static NSString *const PJMapPreferencesPath = @"/var/mobile/Library/Preferences/
     [self.recenterButton addTarget:self action:@selector(recenterMap) forControlEvents:UIControlEventTouchUpInside];
     [self.mapPanel addSubview:self.recenterButton];
 
+    self.minimizeMapButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.minimizeMapButton.backgroundColor = [UIColor colorWithWhite:0.05 alpha:0.78];
+    self.minimizeMapButton.layer.cornerRadius = 22;
+    self.minimizeMapButton.tintColor = UIColor.whiteColor;
+    self.minimizeMapButton.titleLabel.font = [UIFont systemFontOfSize:22 weight:UIFontWeightSemibold];
+    [self.minimizeMapButton setTitle:@"−" forState:UIControlStateNormal];
+    [self.minimizeMapButton addTarget:self action:@selector(minimizeMap) forControlEvents:UIControlEventTouchUpInside];
+    [self.mapPanel addSubview:self.minimizeMapButton];
+
     UILabel *hint = [[UILabel alloc] initWithFrame:CGRectZero];
     hint.tag = 2020;
     hint.text = @"长按地图选择位置";
@@ -243,11 +254,6 @@ static NSString *const PJMapPreferencesPath = @"/var/mobile/Library/Preferences/
     UILongPressGestureRecognizer *press = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(selectMapLocation:)];
     press.minimumPressDuration = 0.55;
     [self.mapView addGestureRecognizer:press];
-
-    UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(doubleTapMap:)];
-    doubleTap.numberOfTapsRequired = 2;
-    doubleTap.cancelsTouchesInView = YES;
-    [self.mapView addGestureRecognizer:doubleTap];
 
     [self changeMapMode:self.mapModeControl];
 
@@ -267,6 +273,7 @@ static NSString *const PJMapPreferencesPath = @"/var/mobile/Library/Preferences/
     self.mapModeControl.frame = CGRectMake((self.view.bounds.size.width - 150) / 2, top, 150, 36);
     hint.frame = CGRectMake((self.view.bounds.size.width - width) / 2, top + 46, width, 36);
     self.recenterButton.frame = CGRectMake(self.view.bounds.size.width - 60, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 60, 44, 44);
+    self.minimizeMapButton.frame = CGRectMake(self.view.bounds.size.width - 60, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 112, 44, 44);
     self.opacityControl.frame = CGRectMake(16, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 60, 190, 44);
     self.opacityLabel.frame = CGRectMake(10, 0, 70, 44);
     self.opacitySlider.frame = CGRectMake(76, 7, 104, 30);
@@ -329,7 +336,14 @@ static NSString *const PJMapPreferencesPath = @"/var/mobile/Library/Preferences/
 }
 
 - (void)recenterMap {
-    [self refreshCurrentLocation:YES];
+    NSDictionary *location = PJReadCurrentLocation();
+    NSNumber *latitude = location[@"latitude"];
+    NSNumber *longitude = location[@"longitude"];
+    if (!latitude || !longitude) return;
+    CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake(latitude.doubleValue, longitude.doubleValue);
+    if (!CLLocationCoordinate2DIsValid(coordinate)) return;
+    [self updateLocationAnnotation:coordinate];
+    [self.mapView setCenterCoordinate:coordinate animated:YES];
 }
 
 - (void)refreshCurrentLocation:(BOOL)centerMap {
@@ -350,13 +364,14 @@ static NSString *const PJMapPreferencesPath = @"/var/mobile/Library/Preferences/
 
 - (void)hideMapPanel {
     [self saveMapState];
+    self.collapsedMap = NO;
     self.mapPanel.hidden = YES;
     self.panel.hidden = NO;
 }
 
-- (void)doubleTapMap:(UITapGestureRecognizer *)gesture {
-    if (gesture.state != UIGestureRecognizerStateRecognized) return;
+- (void)minimizeMap {
     [self saveMapState];
+    self.collapsedMap = YES;
     self.mapPanel.hidden = YES;
     self.panel.hidden = YES;
     CGPoint origin = self.panel.frame.origin;
@@ -400,6 +415,7 @@ static NSString *const PJMapPreferencesPath = @"/var/mobile/Library/Preferences/
 
 - (void)collapseJoystick {
     [self stopMoving];
+    self.collapsedMap = NO;
     CGPoint origin = self.panel.frame.origin;
     self.panel.hidden = YES;
     self.collapsedButton.hidden = NO;
@@ -408,8 +424,14 @@ static NSString *const PJMapPreferencesPath = @"/var/mobile/Library/Preferences/
 }
 
 - (void)expandJoystick {
-    self.panel.hidden = NO;
     self.collapsedButton.hidden = YES;
+    if (self.collapsedMap) {
+        self.mapPanel.hidden = NO;
+        BOOL restored = [self restoreMapState];
+        [self refreshCurrentLocation:!restored];
+        return;
+    }
+    self.panel.hidden = NO;
 }
 
 - (void)dragPanel:(UIPanGestureRecognizer *)gesture {
