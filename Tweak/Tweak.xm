@@ -1,10 +1,27 @@
 #import <UIKit/UIKit.h>
 #import <MapKit/MapKit.h>
+#import <QuartzCore/QuartzCore.h>
 #import <math.h>
 #import "PJJoystickIPC.h"
 
 static NSString *const PJEndpoint = @"http://127.0.0.1:8888/joystick";
 static NSString *const PJMapPreferencesPath = @"/var/mobile/Library/Preferences/com.paopaolabs.joystick.map.plist";
+
+typedef struct {
+    float m11, m12, m13, m14;
+    float m21, m22, m23, m24;
+    float m31, m32, m33, m34;
+    float m41, m42, m43, m44;
+    float m51, m52, m53, m54;
+} PJCAColorMatrix;
+
+@interface NSValue (PJCAColorMatrix)
++ (NSValue *)valueWithCAColorMatrix:(PJCAColorMatrix)matrix;
+@end
+
+@interface PJCAFilter : NSObject
++ (instancetype)filterWithType:(NSString *)type;
+@end
 
 @interface PJOverlayWindow : UIWindow
 @end
@@ -287,7 +304,29 @@ static NSString *const PJMapPreferencesPath = @"/var/mobile/Library/Preferences/
     BOOL routeOnly = control.selectedSegmentIndex == 1;
     self.mapView.overrideUserInterfaceStyle = routeOnly ? UIUserInterfaceStyleDark : UIUserInterfaceStyleUnspecified;
     self.mapView.showsBuildings = !routeOnly;
-    self.mapView.layer.compositingFilter = routeOnly ? @"screenBlendMode" : nil;
+    self.mapView.layer.compositingFilter = nil;
+    self.mapView.layer.filters = nil;
+    if (routeOnly) {
+        Class filterClass = NSClassFromString(@"CAFilter");
+        if ([filterClass respondsToSelector:@selector(filterWithType:)]) {
+            // Dark MapKit land and water stay below this luminance threshold;
+            // roads and labels retain their original RGB while gaining alpha.
+            PJCAColorMatrix matrix = {
+                1, 0, 0, 0.70f,
+                0, 1, 0, 2.30f,
+                0, 0, 1, 0.23f,
+                0, 0, 0, 0,
+                0, 0, 0, -0.66f
+            };
+            @try {
+                PJCAFilter *filter = [filterClass filterWithType:@"colorMatrix"];
+                [filter setValue:[NSValue valueWithCAColorMatrix:matrix] forKey:@"inputColorMatrix"];
+                self.mapView.layer.filters = @[filter];
+            } @catch (__unused NSException *exception) {
+                self.mapView.layer.compositingFilter = @"screenBlendMode";
+            }
+        }
+    }
     [self saveMapState];
 }
 
