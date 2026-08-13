@@ -1,5 +1,8 @@
 name: Build RootHide Joystick Tweak
 
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
   push:
@@ -39,3 +42,14 @@ jobs:
           path: Tweak/packages/*.deb
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish downloadable DEB
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="$(awk '/^Version:/ { print $2 }' Tweak/control)"
+          TAG="joystick-v${VERSION}"
+          DEB="$(find Tweak/packages -name '*.deb' -type f | head -n 1)"
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "Paopao Joystick ${VERSION}" --notes "RootHide jailbreak package."
+          gh release upload "$TAG" "$DEB" --clobber
