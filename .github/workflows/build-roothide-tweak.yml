@@ -25,7 +25,9 @@ jobs:
 
       - name: Build RootHide package
         working-directory: Tweak
-        run: make package FINALPACKAGE=1 2>&1 | tee build.log
+        run: |
+          set -o pipefail
+          make package FINALPACKAGE=1 2>&1 | tee build.log
 
       - name: Upload build log
         if: always()
@@ -34,6 +36,17 @@ jobs:
           name: PaopaoJoystick-build-log
           path: Tweak/build.log
           retention-days: 14
+
+      - name: Publish build log
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="$(awk '/^Version:/ { print $2 }' Tweak/control)"
+          TAG="joystick-v${VERSION}"
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "Paopao Joystick ${VERSION}" --notes "RootHide jailbreak package."
+          gh release upload "$TAG" Tweak/build.log --clobber
 
       - name: Upload DEB
         uses: actions/upload-artifact@v4
