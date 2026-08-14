@@ -272,7 +272,6 @@ typedef struct {
     self.scaleLockButton.layer.cornerRadius = 8;
     self.scaleLockButton.tintColor = UIColor.whiteColor;
     self.scaleLockButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
-    self.scaleLockButton.contentEdgeInsets = UIEdgeInsetsMake(0, 8, 0, 8);
     [self.scaleLockButton setTitle:@" 比例" forState:UIControlStateNormal];
     [self.scaleLockButton addTarget:self action:@selector(toggleScaleLock) forControlEvents:UIControlEventTouchUpInside];
     [self.mapPanel addSubview:self.scaleLockButton];
@@ -281,7 +280,6 @@ typedef struct {
     self.angleLockButton.layer.cornerRadius = 8;
     self.angleLockButton.tintColor = UIColor.whiteColor;
     self.angleLockButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
-    self.angleLockButton.contentEdgeInsets = UIEdgeInsetsMake(0, 8, 0, 8);
     [self.angleLockButton setTitle:@" 角度" forState:UIControlStateNormal];
     [self.angleLockButton addTarget:self action:@selector(toggleAngleLock) forControlEvents:UIControlEventTouchUpInside];
     [self.mapPanel addSubview:self.angleLockButton];
