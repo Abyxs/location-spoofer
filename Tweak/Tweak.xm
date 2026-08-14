@@ -47,6 +47,8 @@ typedef struct {
 @property(nonatomic, strong) MKPointAnnotation *locationAnnotation;
 @property(nonatomic, strong) UIButton *recenterButton;
 @property(nonatomic, strong) UIButton *minimizeMapButton;
+@property(nonatomic, strong) UIButton *scaleLockButton;
+@property(nonatomic, strong) UIButton *angleLockButton;
 @property(nonatomic, strong) UISegmentedControl *mapModeControl;
 @property(nonatomic, strong) UIView *opacityControl;
 @property(nonatomic, strong) UISlider *opacitySlider;
@@ -66,6 +68,8 @@ typedef struct {
 @property(nonatomic) BOOL collapsedMap;
 @property(nonatomic) CGPoint collapsedButtonCenter;
 @property(nonatomic) BOOL hasCollapsedButtonCenter;
+@property(nonatomic) BOOL scaleLocked;
+@property(nonatomic) BOOL angleLocked;
 @end
 
 @implementation PJController
@@ -206,6 +210,8 @@ typedef struct {
     CGFloat savedOpacity = [mapPreferences[@"opacity"] doubleValue];
     if (savedOpacity < 0.2 || savedOpacity > 1.0) savedOpacity = 0.58;
     self.mapView.alpha = savedOpacity;
+    self.scaleLocked = [mapPreferences[@"scaleLocked"] boolValue];
+    self.angleLocked = [mapPreferences[@"angleLocked"] boolValue];
 
     self.mapModeControl = [[UISegmentedControl alloc] initWithItems:@[@"半透明", @"仅路线"]];
     self.mapModeControl.selectedSegmentIndex = [mapPreferences[@"mode"] integerValue] == 1 ? 1 : 0;
@@ -262,6 +268,25 @@ typedef struct {
     [self.minimizeMapButton addTarget:self action:@selector(minimizeMap) forControlEvents:UIControlEventTouchUpInside];
     [self.mapPanel addSubview:self.minimizeMapButton];
 
+    self.scaleLockButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.scaleLockButton.layer.cornerRadius = 8;
+    self.scaleLockButton.tintColor = UIColor.whiteColor;
+    self.scaleLockButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
+    self.scaleLockButton.contentEdgeInsets = UIEdgeInsetsMake(0, 8, 0, 8);
+    [self.scaleLockButton setTitle:@" 比例" forState:UIControlStateNormal];
+    [self.scaleLockButton addTarget:self action:@selector(toggleScaleLock) forControlEvents:UIControlEventTouchUpInside];
+    [self.mapPanel addSubview:self.scaleLockButton];
+
+    self.angleLockButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.angleLockButton.layer.cornerRadius = 8;
+    self.angleLockButton.tintColor = UIColor.whiteColor;
+    self.angleLockButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
+    self.angleLockButton.contentEdgeInsets = UIEdgeInsetsMake(0, 8, 0, 8);
+    [self.angleLockButton setTitle:@" 角度" forState:UIControlStateNormal];
+    [self.angleLockButton addTarget:self action:@selector(toggleAngleLock) forControlEvents:UIControlEventTouchUpInside];
+    [self.mapPanel addSubview:self.angleLockButton];
+    [self updateMapLockButtons];
+
     UILabel *hint = [[UILabel alloc] initWithFrame:CGRectZero];
     hint.tag = 2020;
     hint.text = @"长按地图选择位置";
@@ -296,9 +321,37 @@ typedef struct {
     hint.frame = CGRectMake((self.view.bounds.size.width - width) / 2, top + 46, width, 36);
     self.recenterButton.frame = CGRectMake(self.view.bounds.size.width - 60, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 60, 44, 44);
     self.minimizeMapButton.frame = CGRectMake(self.view.bounds.size.width - 60, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 112, 44, 44);
+    self.scaleLockButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 92, 76, 36);
+    self.angleLockButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 136, 76, 36);
     self.opacityControl.frame = CGRectMake(16, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 60, 190, 44);
     self.opacityLabel.frame = CGRectMake(10, 0, 70, 44);
     self.opacitySlider.frame = CGRectMake(76, 7, 104, 30);
+}
+
+- (void)toggleScaleLock {
+    self.scaleLocked = !self.scaleLocked;
+    [self updateMapLockButtons];
+    [self saveMapState];
+}
+
+- (void)toggleAngleLock {
+    self.angleLocked = !self.angleLocked;
+    [self updateMapLockButtons];
+    [self saveMapState];
+}
+
+- (void)updateMapLockButtons {
+    self.mapView.zoomEnabled = !self.scaleLocked;
+    self.mapView.rotateEnabled = !self.angleLocked;
+    self.mapView.pitchEnabled = !self.angleLocked;
+    UIImage *scaleIcon = [UIImage systemImageNamed:self.scaleLocked ? @"lock.fill" : @"lock.open"];
+    UIImage *angleIcon = [UIImage systemImageNamed:self.angleLocked ? @"lock.fill" : @"lock.open"];
+    [self.scaleLockButton setImage:scaleIcon forState:UIControlStateNormal];
+    [self.angleLockButton setImage:angleIcon forState:UIControlStateNormal];
+    UIColor *lockedColor = [UIColor colorWithRed:0.10 green:0.50 blue:0.31 alpha:0.92];
+    UIColor *unlockedColor = [UIColor colorWithWhite:0.05 alpha:0.78];
+    self.scaleLockButton.backgroundColor = self.scaleLocked ? lockedColor : unlockedColor;
+    self.angleLockButton.backgroundColor = self.angleLocked ? lockedColor : unlockedColor;
 }
 
 - (void)changeMapMode:(UISegmentedControl *)control {
@@ -349,7 +402,9 @@ typedef struct {
         @"pitch": @(camera.pitch),
         @"heading": @(camera.heading),
         @"opacity": @(self.opacitySlider.value),
-        @"mode": @(self.mapModeControl.selectedSegmentIndex)
+        @"mode": @(self.mapModeControl.selectedSegmentIndex),
+        @"scaleLocked": @(self.scaleLocked),
+        @"angleLocked": @(self.angleLocked)
     } writeToFile:PJMapPreferencesPath atomically:YES];
 }
 
