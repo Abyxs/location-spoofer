@@ -49,6 +49,7 @@ typedef struct {
 @property(nonatomic, strong) UIButton *minimizeMapButton;
 @property(nonatomic, strong) UIButton *scaleLockButton;
 @property(nonatomic, strong) UIButton *angleLockButton;
+@property(nonatomic, strong) UIButton *positionLockButton;
 @property(nonatomic, strong) UISegmentedControl *mapModeControl;
 @property(nonatomic, strong) UIView *opacityControl;
 @property(nonatomic, strong) UISlider *opacitySlider;
@@ -70,6 +71,8 @@ typedef struct {
 @property(nonatomic) BOOL hasCollapsedButtonCenter;
 @property(nonatomic) BOOL scaleLocked;
 @property(nonatomic) BOOL angleLocked;
+@property(nonatomic) BOOL positionLocked;
+@property(nonatomic) CGPoint positionLockPointNormalized;
 @end
 
 @implementation PJController
@@ -212,6 +215,12 @@ typedef struct {
     self.mapView.alpha = savedOpacity;
     self.scaleLocked = [mapPreferences[@"scaleLocked"] boolValue];
     self.angleLocked = [mapPreferences[@"angleLocked"] boolValue];
+    self.positionLocked = [mapPreferences[@"positionLocked"] boolValue];
+    NSNumber *positionLockX = mapPreferences[@"positionLockX"];
+    NSNumber *positionLockY = mapPreferences[@"positionLockY"];
+    self.positionLockPointNormalized = positionLockX && positionLockY
+        ? CGPointMake(MIN(MAX(positionLockX.doubleValue, 0), 1), MIN(MAX(positionLockY.doubleValue, 0), 1))
+        : CGPointMake(0.5, 0.5);
 
     self.mapModeControl = [[UISegmentedControl alloc] initWithItems:@[@"半透明", @"仅路线"]];
     self.mapModeControl.selectedSegmentIndex = [mapPreferences[@"mode"] integerValue] == 1 ? 1 : 0;
@@ -283,6 +292,14 @@ typedef struct {
     [self.angleLockButton setTitle:@" 角度" forState:UIControlStateNormal];
     [self.angleLockButton addTarget:self action:@selector(toggleAngleLock) forControlEvents:UIControlEventTouchUpInside];
     [self.mapPanel addSubview:self.angleLockButton];
+
+    self.positionLockButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.positionLockButton.layer.cornerRadius = 8;
+    self.positionLockButton.tintColor = UIColor.whiteColor;
+    self.positionLockButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
+    [self.positionLockButton setTitle:@" 位置" forState:UIControlStateNormal];
+    [self.positionLockButton addTarget:self action:@selector(togglePositionLock) forControlEvents:UIControlEventTouchUpInside];
+    [self.mapPanel addSubview:self.positionLockButton];
     [self updateMapLockButtons];
 
     UILabel *hint = [[UILabel alloc] initWithFrame:CGRectZero];
@@ -321,6 +338,7 @@ typedef struct {
     self.minimizeMapButton.frame = CGRectMake(self.view.bounds.size.width - 60, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 112, 44, 44);
     self.scaleLockButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 92, 76, 36);
     self.angleLockButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 136, 76, 36);
+    self.positionLockButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 180, 76, 36);
     self.opacityControl.frame = CGRectMake(16, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 60, 190, 44);
     self.opacityLabel.frame = CGRectMake(10, 0, 70, 44);
     self.opacitySlider.frame = CGRectMake(76, 7, 104, 30);
@@ -338,18 +356,39 @@ typedef struct {
     [self saveMapState];
 }
 
+- (void)togglePositionLock {
+    self.positionLocked = !self.positionLocked;
+    if (self.positionLocked) {
+        [self refreshCurrentLocation:NO];
+        CGPoint point = self.locationAnnotation
+            ? [self.mapView convertCoordinate:self.locationAnnotation.coordinate toPointToView:self.mapView]
+            : CGPointMake(CGRectGetMidX(self.mapView.bounds), CGRectGetMidY(self.mapView.bounds));
+        if (!CGRectContainsPoint(self.mapView.bounds, point)) {
+            point = CGPointMake(CGRectGetMidX(self.mapView.bounds), CGRectGetMidY(self.mapView.bounds));
+        }
+        CGFloat width = MAX(CGRectGetWidth(self.mapView.bounds), 1);
+        CGFloat height = MAX(CGRectGetHeight(self.mapView.bounds), 1);
+        self.positionLockPointNormalized = CGPointMake(point.x / width, point.y / height);
+    }
+    [self updateMapLockButtons];
+    [self saveMapState];
+}
+
 - (void)updateMapLockButtons {
     self.mapView.zoomEnabled = !self.scaleLocked;
     self.mapView.rotateEnabled = !self.angleLocked;
     self.mapView.pitchEnabled = !self.angleLocked;
     UIImage *scaleIcon = [UIImage systemImageNamed:self.scaleLocked ? @"lock.fill" : @"lock.open"];
     UIImage *angleIcon = [UIImage systemImageNamed:self.angleLocked ? @"lock.fill" : @"lock.open"];
+    UIImage *positionIcon = [UIImage systemImageNamed:self.positionLocked ? @"lock.fill" : @"lock.open"];
     [self.scaleLockButton setImage:scaleIcon forState:UIControlStateNormal];
     [self.angleLockButton setImage:angleIcon forState:UIControlStateNormal];
+    [self.positionLockButton setImage:positionIcon forState:UIControlStateNormal];
     UIColor *lockedColor = [UIColor colorWithRed:0.10 green:0.50 blue:0.31 alpha:0.92];
     UIColor *unlockedColor = [UIColor colorWithWhite:0.05 alpha:0.78];
     self.scaleLockButton.backgroundColor = self.scaleLocked ? lockedColor : unlockedColor;
     self.angleLockButton.backgroundColor = self.angleLocked ? lockedColor : unlockedColor;
+    self.positionLockButton.backgroundColor = self.positionLocked ? lockedColor : unlockedColor;
 }
 
 - (void)changeMapMode:(UISegmentedControl *)control {
@@ -402,7 +441,10 @@ typedef struct {
         @"opacity": @(self.opacitySlider.value),
         @"mode": @(self.mapModeControl.selectedSegmentIndex),
         @"scaleLocked": @(self.scaleLocked),
-        @"angleLocked": @(self.angleLocked)
+        @"angleLocked": @(self.angleLocked),
+        @"positionLocked": @(self.positionLocked),
+        @"positionLockX": @(self.positionLockPointNormalized.x),
+        @"positionLockY": @(self.positionLockPointNormalized.y)
     } writeToFile:PJMapPreferencesPath atomically:YES];
 }
 
@@ -485,6 +527,21 @@ typedef struct {
     if (!CLLocationCoordinate2DIsValid(coordinate)) return;
     [self updateLocationAnnotation:coordinate];
     PJWriteAbsoluteLocation(coordinate.latitude, coordinate.longitude);
+    if (self.positionLocked) {
+        CGFloat width = CGRectGetWidth(self.mapView.bounds);
+        CGFloat height = CGRectGetHeight(self.mapView.bounds);
+        CGPoint lockedPoint = CGPointMake(self.positionLockPointNormalized.x * width,
+                                          self.positionLockPointNormalized.y * height);
+        CGPoint selectedPoint = [self.mapView convertCoordinate:coordinate toPointToView:self.mapView];
+        CGPoint centerPoint = CGPointMake(width / 2.0, height / 2.0);
+        CGPoint adjustedCenterPoint = CGPointMake(centerPoint.x + selectedPoint.x - lockedPoint.x,
+                                                   centerPoint.y + selectedPoint.y - lockedPoint.y);
+        CLLocationCoordinate2D adjustedCenter = [self.mapView convertPoint:adjustedCenterPoint
+                                                        toCoordinateFromView:self.mapView];
+        if (CLLocationCoordinate2DIsValid(adjustedCenter)) {
+            [self.mapView setCenterCoordinate:adjustedCenter animated:YES];
+        }
+    }
     UIImpactFeedbackGenerator *feedback = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
     [feedback impactOccurred];
 }
