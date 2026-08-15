@@ -55,7 +55,6 @@ typedef struct {
 @property(nonatomic, strong) UIView *opacityControl;
 @property(nonatomic, strong) UISlider *opacitySlider;
 @property(nonatomic, strong) UILabel *opacityLabel;
-@property(nonatomic, strong) UILabel *favoritesLabel;
 @property(nonatomic, strong) NSMutableArray<NSDictionary *> *favoriteLocations;
 @property(nonatomic, strong) NSMutableArray<MKPointAnnotation *> *favoriteAnnotations;
 @property(nonatomic) int locationUpdateToken;
@@ -318,15 +317,6 @@ typedef struct {
     [self.mapPanel addSubview:self.favoriteButton];
     [self updateMapLockButtons];
 
-    self.favoritesLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-    self.favoritesLabel.numberOfLines = 2;
-    self.favoritesLabel.textColor = UIColor.whiteColor;
-    self.favoritesLabel.backgroundColor = [UIColor colorWithWhite:0.05 alpha:0.78];
-    self.favoritesLabel.layer.cornerRadius = 8;
-    self.favoritesLabel.clipsToBounds = YES;
-    self.favoritesLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
-    self.favoritesLabel.textAlignment = NSTextAlignmentLeft;
-    [self.mapPanel addSubview:self.favoritesLabel];
     [self updateFavoritesUI];
 
     UILabel *hint = [[UILabel alloc] initWithFrame:CGRectZero];
@@ -368,8 +358,6 @@ typedef struct {
     self.positionLockButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 180, 76, 36);
     self.favoriteButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 224, 76, 36);
     self.opacityControl.frame = CGRectMake(16, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 60, 190, 44);
-    CGFloat favoritesWidth = MIN(300, self.view.bounds.size.width - 32);
-    self.favoritesLabel.frame = CGRectMake(16, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 112, favoritesWidth, 44);
     self.opacityLabel.frame = CGRectMake(10, 0, 70, 44);
     self.opacitySlider.frame = CGRectMake(76, 7, 104, 30);
 }
@@ -449,7 +437,6 @@ typedef struct {
 - (void)updateFavoriteDistances {
     CLLocationCoordinate2D current = self.locationAnnotation ? self.locationAnnotation.coordinate : CLLocationCoordinate2DMake(0, 0);
     BOOL hasCurrent = self.locationAnnotation && CLLocationCoordinate2DIsValid(current);
-    NSMutableArray<NSString *> *summaries = [NSMutableArray array];
     for (NSUInteger index = 0; index < self.favoriteLocations.count; index++) {
         NSDictionary *favorite = self.favoriteLocations[index];
         CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake([favorite[@"latitude"] doubleValue], [favorite[@"longitude"] doubleValue]);
@@ -457,14 +444,7 @@ typedef struct {
         NSString *distance = hasCurrent ? [self distanceStringFromCoordinate:current toCoordinate:coordinate] : @"--";
         annotation.title = [NSString stringWithFormat:@"收藏 %lu", (unsigned long)index + 1];
         annotation.subtitle = [NSString stringWithFormat:@"距模拟位置 %@", distance];
-        if (index < 3) [summaries addObject:[NSString stringWithFormat:@"%lu %@", (unsigned long)index + 1, distance]];
     }
-    if (self.favoriteLocations.count > 3) {
-        [summaries addObject:[NSString stringWithFormat:@"+%lu", (unsigned long)self.favoriteLocations.count - 3]];
-    }
-    self.favoritesLabel.text = summaries.count
-        ? [NSString stringWithFormat:@"收藏  %lu    %@", (unsigned long)self.favoriteLocations.count, [summaries componentsJoinedByString:@"  ·  "]]
-        : @"收藏  0    长按收藏当前模拟点";
 }
 
 - (void)updateFavoritesUI {
