@@ -50,10 +50,14 @@ typedef struct {
 @property(nonatomic, strong) UIButton *scaleLockButton;
 @property(nonatomic, strong) UIButton *angleLockButton;
 @property(nonatomic, strong) UIButton *positionLockButton;
+@property(nonatomic, strong) UIButton *favoriteButton;
 @property(nonatomic, strong) UISegmentedControl *mapModeControl;
 @property(nonatomic, strong) UIView *opacityControl;
 @property(nonatomic, strong) UISlider *opacitySlider;
 @property(nonatomic, strong) UILabel *opacityLabel;
+@property(nonatomic, strong) UILabel *favoritesLabel;
+@property(nonatomic, strong) NSMutableArray<NSDictionary *> *favoriteLocations;
+@property(nonatomic, strong) NSMutableArray<MKPointAnnotation *> *favoriteAnnotations;
 @property(nonatomic) int locationUpdateToken;
 @property(nonatomic, strong) CADisplayLink *displayLink;
 @property(nonatomic) CGPoint direction;
@@ -208,8 +212,11 @@ typedef struct {
     self.mapView.showsCompass = YES;
     self.mapView.showsScale = YES;
     [self.mapPanel addSubview:self.mapView];
+    self.favoriteLocations = [NSMutableArray array];
+    self.favoriteAnnotations = [NSMutableArray array];
 
     NSDictionary *mapPreferences = [NSDictionary dictionaryWithContentsOfFile:PJMapPreferencesPath];
+    [self loadFavorites:mapPreferences];
     CGFloat savedOpacity = [mapPreferences[@"opacity"] doubleValue];
     if (savedOpacity < 0.2 || savedOpacity > 1.0) savedOpacity = 0.58;
     self.mapView.alpha = savedOpacity;
@@ -300,7 +307,27 @@ typedef struct {
     [self.positionLockButton setTitle:@" 位置" forState:UIControlStateNormal];
     [self.positionLockButton addTarget:self action:@selector(togglePositionLock) forControlEvents:UIControlEventTouchUpInside];
     [self.mapPanel addSubview:self.positionLockButton];
+
+    self.favoriteButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.favoriteButton.layer.cornerRadius = 8;
+    self.favoriteButton.tintColor = UIColor.whiteColor;
+    self.favoriteButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
+    [self.favoriteButton setTitle:@" 收藏" forState:UIControlStateNormal];
+    [self.favoriteButton setImage:[UIImage systemImageNamed:@"star.fill"] forState:UIControlStateNormal];
+    [self.favoriteButton addTarget:self action:@selector(addCurrentLocationToFavorites) forControlEvents:UIControlEventTouchUpInside];
+    [self.mapPanel addSubview:self.favoriteButton];
     [self updateMapLockButtons];
+
+    self.favoritesLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    self.favoritesLabel.numberOfLines = 2;
+    self.favoritesLabel.textColor = UIColor.whiteColor;
+    self.favoritesLabel.backgroundColor = [UIColor colorWithWhite:0.05 alpha:0.78];
+    self.favoritesLabel.layer.cornerRadius = 8;
+    self.favoritesLabel.clipsToBounds = YES;
+    self.favoritesLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
+    self.favoritesLabel.textAlignment = NSTextAlignmentLeft;
+    [self.mapPanel addSubview:self.favoritesLabel];
+    [self updateFavoritesUI];
 
     UILabel *hint = [[UILabel alloc] initWithFrame:CGRectZero];
     hint.tag = 2020;
@@ -339,7 +366,10 @@ typedef struct {
     self.scaleLockButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 92, 76, 36);
     self.angleLockButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 136, 76, 36);
     self.positionLockButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 180, 76, 36);
+    self.favoriteButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 224, 76, 36);
     self.opacityControl.frame = CGRectMake(16, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 60, 190, 44);
+    CGFloat favoritesWidth = MIN(300, self.view.bounds.size.width - 32);
+    self.favoritesLabel.frame = CGRectMake(16, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 112, favoritesWidth, 44);
     self.opacityLabel.frame = CGRectMake(10, 0, 70, 44);
     self.opacitySlider.frame = CGRectMake(76, 7, 104, 30);
 }
@@ -389,6 +419,83 @@ typedef struct {
     self.scaleLockButton.backgroundColor = self.scaleLocked ? lockedColor : unlockedColor;
     self.angleLockButton.backgroundColor = self.angleLocked ? lockedColor : unlockedColor;
     self.positionLockButton.backgroundColor = self.positionLocked ? lockedColor : unlockedColor;
+}
+
+- (void)loadFavorites:(NSDictionary *)preferences {
+    NSArray *storedFavorites = [preferences[@"favorites"] isKindOfClass:[NSArray class]] ? preferences[@"favorites"] : @[];
+    for (NSDictionary *favorite in storedFavorites) {
+        NSNumber *latitude = favorite[@"latitude"];
+        NSNumber *longitude = favorite[@"longitude"];
+        if (!latitude || !longitude) continue;
+        CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake(latitude.doubleValue, longitude.doubleValue);
+        if (!CLLocationCoordinate2DIsValid(coordinate)) continue;
+        [self.favoriteLocations addObject:@{ @"latitude": @(coordinate.latitude), @"longitude": @(coordinate.longitude) }];
+        MKPointAnnotation *annotation = [MKPointAnnotation new];
+        annotation.coordinate = coordinate;
+        [self.favoriteAnnotations addObject:annotation];
+        [self.mapView addAnnotation:annotation];
+    }
+    [self updateFavoriteDistances];
+}
+
+- (NSString *)distanceStringFromCoordinate:(CLLocationCoordinate2D)from toCoordinate:(CLLocationCoordinate2D)to {
+    CLLocation *fromLocation = [[CLLocation alloc] initWithLatitude:from.latitude longitude:from.longitude];
+    CLLocation *toLocation = [[CLLocation alloc] initWithLatitude:to.latitude longitude:to.longitude];
+    CLLocationDistance distance = [fromLocation distanceFromLocation:toLocation];
+    if (distance < 1000) return [NSString stringWithFormat:@"%.0fm", distance];
+    return [NSString stringWithFormat:@"%.2fkm", distance / 1000.0];
+}
+
+- (void)updateFavoriteDistances {
+    CLLocationCoordinate2D current = self.locationAnnotation ? self.locationAnnotation.coordinate : CLLocationCoordinate2DMake(0, 0);
+    BOOL hasCurrent = self.locationAnnotation && CLLocationCoordinate2DIsValid(current);
+    NSMutableArray<NSString *> *summaries = [NSMutableArray array];
+    for (NSUInteger index = 0; index < self.favoriteLocations.count; index++) {
+        NSDictionary *favorite = self.favoriteLocations[index];
+        CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake([favorite[@"latitude"] doubleValue], [favorite[@"longitude"] doubleValue]);
+        MKPointAnnotation *annotation = index < self.favoriteAnnotations.count ? self.favoriteAnnotations[index] : nil;
+        NSString *distance = hasCurrent ? [self distanceStringFromCoordinate:current toCoordinate:coordinate] : @"--";
+        annotation.title = [NSString stringWithFormat:@"收藏 %lu", (unsigned long)index + 1];
+        annotation.subtitle = [NSString stringWithFormat:@"距模拟位置 %@", distance];
+        if (index < 3) [summaries addObject:[NSString stringWithFormat:@"%lu %@", (unsigned long)index + 1, distance]];
+    }
+    if (self.favoriteLocations.count > 3) {
+        [summaries addObject:[NSString stringWithFormat:@"+%lu", (unsigned long)self.favoriteLocations.count - 3]];
+    }
+    self.favoritesLabel.text = summaries.count
+        ? [NSString stringWithFormat:@"收藏  %lu    %@", (unsigned long)self.favoriteLocations.count, [summaries componentsJoinedByString:@"  ·  "]]
+        : @"收藏  0    长按收藏当前模拟点";
+}
+
+- (void)updateFavoritesUI {
+    self.favoriteButton.backgroundColor = self.favoriteLocations.count
+        ? [UIColor colorWithRed:0.10 green:0.50 blue:0.31 alpha:0.92]
+        : [UIColor colorWithWhite:0.05 alpha:0.78];
+    [self updateFavoriteDistances];
+}
+
+- (void)addCurrentLocationToFavorites {
+    NSDictionary *location = PJReadCurrentLocation();
+    NSNumber *latitude = location[@"latitude"];
+    NSNumber *longitude = location[@"longitude"];
+    CLLocationCoordinate2D coordinate = (latitude && longitude)
+        ? CLLocationCoordinate2DMake(latitude.doubleValue, longitude.doubleValue)
+        : CLLocationCoordinate2DMake(91, 181);
+    if (!CLLocationCoordinate2DIsValid(coordinate) && self.locationAnnotation) coordinate = self.locationAnnotation.coordinate;
+    if (!CLLocationCoordinate2DIsValid(coordinate)) return;
+    for (NSDictionary *favorite in self.favoriteLocations) {
+        CLLocationCoordinate2D existing = CLLocationCoordinate2DMake([favorite[@"latitude"] doubleValue], [favorite[@"longitude"] doubleValue]);
+        CLLocation *existingLocation = [[CLLocation alloc] initWithLatitude:existing.latitude longitude:existing.longitude];
+        CLLocation *newLocation = [[CLLocation alloc] initWithLatitude:coordinate.latitude longitude:coordinate.longitude];
+        if ([existingLocation distanceFromLocation:newLocation] < 5) return;
+    }
+    [self.favoriteLocations addObject:@{ @"latitude": @(coordinate.latitude), @"longitude": @(coordinate.longitude) }];
+    MKPointAnnotation *annotation = [MKPointAnnotation new];
+    annotation.coordinate = coordinate;
+    [self.favoriteAnnotations addObject:annotation];
+    [self.mapView addAnnotation:annotation];
+    [self updateFavoritesUI];
+    [self saveMapState];
 }
 
 - (void)changeMapMode:(UISegmentedControl *)control {
@@ -444,7 +551,8 @@ typedef struct {
         @"angleLocked": @(self.angleLocked),
         @"positionLocked": @(self.positionLocked),
         @"positionLockX": @(self.positionLockPointNormalized.x),
-        @"positionLockY": @(self.positionLockPointNormalized.y)
+        @"positionLockY": @(self.positionLockPointNormalized.y),
+        @"favorites": self.favoriteLocations ?: @[]
     } writeToFile:PJMapPreferencesPath atomically:YES];
 }
 
@@ -497,6 +605,7 @@ typedef struct {
         [self.mapView addAnnotation:self.locationAnnotation];
     }
     self.locationAnnotation.coordinate = coordinate;
+    [self updateFavoriteDistances];
     if (centerMap) [self.mapView setRegion:MKCoordinateRegionMakeWithDistance(coordinate, 1200, 1200) animated:YES];
 }
 
@@ -553,6 +662,7 @@ typedef struct {
         [self.mapView addAnnotation:self.locationAnnotation];
     }
     self.locationAnnotation.coordinate = coordinate;
+    [self updateFavoriteDistances];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
