@@ -417,7 +417,10 @@ typedef struct {
         if (!latitude || !longitude) continue;
         CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake(latitude.doubleValue, longitude.doubleValue);
         if (!CLLocationCoordinate2DIsValid(coordinate)) continue;
-        [self.favoriteLocations addObject:@{ @"latitude": @(coordinate.latitude), @"longitude": @(coordinate.longitude) }];
+        NSMutableDictionary *storedFavorite = [@{ @"latitude": @(coordinate.latitude), @"longitude": @(coordinate.longitude) } mutableCopy];
+        NSString *name = [favorite[@"name"] isKindOfClass:[NSString class]] ? favorite[@"name"] : nil;
+        if (name.length) storedFavorite[@"name"] = name;
+        [self.favoriteLocations addObject:storedFavorite];
         MKPointAnnotation *annotation = [MKPointAnnotation new];
         annotation.coordinate = coordinate;
         [self.favoriteAnnotations addObject:annotation];
@@ -434,6 +437,13 @@ typedef struct {
     return [NSString stringWithFormat:@"%.2fkm", distance / 1000.0];
 }
 
+- (NSString *)favoriteNameAtIndex:(NSUInteger)index {
+    if (index >= self.favoriteLocations.count) return @"收藏";
+    NSDictionary *favorite = self.favoriteLocations[index];
+    NSString *name = [favorite[@"name"] isKindOfClass:[NSString class]] ? favorite[@"name"] : nil;
+    return name.length ? name : [NSString stringWithFormat:@"收藏 %lu", (unsigned long)index + 1];
+}
+
 - (void)updateFavoriteDistances {
     CLLocationCoordinate2D current = self.locationAnnotation ? self.locationAnnotation.coordinate : CLLocationCoordinate2DMake(0, 0);
     BOOL hasCurrent = self.locationAnnotation && CLLocationCoordinate2DIsValid(current);
@@ -442,7 +452,7 @@ typedef struct {
         CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake([favorite[@"latitude"] doubleValue], [favorite[@"longitude"] doubleValue]);
         MKPointAnnotation *annotation = index < self.favoriteAnnotations.count ? self.favoriteAnnotations[index] : nil;
         NSString *distance = hasCurrent ? [self distanceStringFromCoordinate:current toCoordinate:coordinate] : @"--";
-        annotation.title = [NSString stringWithFormat:@"收藏 %lu", (unsigned long)index + 1];
+        annotation.title = [self favoriteNameAtIndex:index];
         annotation.subtitle = [NSString stringWithFormat:@"距模拟位置 %@", distance];
     }
 }
@@ -468,7 +478,7 @@ typedef struct {
         NSString *distance = self.locationAnnotation && CLLocationCoordinate2DIsValid(self.locationAnnotation.coordinate)
             ? [self distanceStringFromCoordinate:self.locationAnnotation.coordinate toCoordinate:coordinate]
             : @"--";
-        NSString *title = [NSString stringWithFormat:@"使用收藏 %lu（距当前 %@）", (unsigned long)index + 1, distance];
+        NSString *title = [NSString stringWithFormat:@"使用 %@（距当前 %@）", [self favoriteNameAtIndex:index], distance];
         [menu addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
             [weakSelf useFavoriteAtIndex:index];
         }]];
@@ -477,6 +487,13 @@ typedef struct {
         [menu addAction:[UIAlertAction actionWithTitle:@"调整收藏顺序…" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 [weakSelf openFavoriteReorderMenu];
+            });
+        }]];
+    }
+    if (self.favoriteLocations.count) {
+        [menu addAction:[UIAlertAction actionWithTitle:@"修改收藏名称…" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [weakSelf openFavoriteRenameMenu];
             });
         }]];
     }
@@ -503,7 +520,7 @@ typedef struct {
         NSString *distance = self.locationAnnotation && CLLocationCoordinate2DIsValid(self.locationAnnotation.coordinate)
             ? [self distanceStringFromCoordinate:self.locationAnnotation.coordinate toCoordinate:coordinate]
             : @"--";
-        NSString *title = [NSString stringWithFormat:@"收藏 %lu（距当前 %@）", (unsigned long)index + 1, distance];
+        NSString *title = [NSString stringWithFormat:@"%@（距当前 %@）", [self favoriteNameAtIndex:index], distance];
         [menu addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 [weakSelf openFavoriteMoveMenuAtIndex:index];
@@ -516,7 +533,7 @@ typedef struct {
 
 - (void)openFavoriteMoveMenuAtIndex:(NSUInteger)index {
     if (index >= self.favoriteLocations.count) return;
-    UIAlertController *menu = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"移动收藏 %lu", (unsigned long)index + 1]
+    UIAlertController *menu = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"移动 %@", [self favoriteNameAtIndex:index]]
                                                                        message:nil
                                                                 preferredStyle:UIAlertControllerStyleActionSheet];
     __weak PJController *weakSelf = self;
@@ -559,6 +576,55 @@ typedef struct {
     [self saveMapState];
 }
 
+- (void)openFavoriteRenameMenu {
+    if (!self.favoriteLocations.count) return;
+    UIAlertController *menu = [UIAlertController alertControllerWithTitle:@"修改收藏名称"
+                                                                       message:@"选择要重命名的收藏地点"
+                                                                preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak PJController *weakSelf = self;
+    for (NSUInteger index = 0; index < self.favoriteLocations.count; index++) {
+        [menu addAction:[UIAlertAction actionWithTitle:[self favoriteNameAtIndex:index] style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [weakSelf openFavoriteRenameEditorAtIndex:index];
+            });
+        }]];
+    }
+    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:menu animated:YES completion:nil];
+}
+
+- (void)openFavoriteRenameEditorAtIndex:(NSUInteger)index {
+    if (index >= self.favoriteLocations.count) return;
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"修改收藏名称"
+                                                                    message:nil
+                                                             preferredStyle:UIAlertControllerStyleAlert];
+    NSString *currentName = [self favoriteNameAtIndex:index];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+        textField.text = currentName;
+        textField.placeholder = @"输入收藏名称";
+        textField.clearButtonMode = UITextFieldViewModeWhileEditing;
+    }];
+    __weak PJController *weakSelf = self;
+    __weak UIAlertController *weakAlert = alert;
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        [weakSelf renameFavoriteAtIndex:index name:weakAlert.textFields.firstObject.text];
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)renameFavoriteAtIndex:(NSUInteger)index name:(NSString *)name {
+    if (index >= self.favoriteLocations.count) return;
+    NSString *trimmedName = [name stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (!trimmedName.length) return;
+    if (trimmedName.length > 30) trimmedName = [trimmedName substringToIndex:30];
+    NSMutableDictionary *favorite = [self.favoriteLocations[index] mutableCopy];
+    favorite[@"name"] = trimmedName;
+    self.favoriteLocations[index] = favorite;
+    [self updateFavoritesUI];
+    [self saveMapState];
+}
+
 - (void)openFavoriteDeleteMenu {
     if (!self.favoriteLocations.count) return;
     UIAlertController *menu = [UIAlertController alertControllerWithTitle:@"删除收藏"
@@ -566,7 +632,7 @@ typedef struct {
                                                                 preferredStyle:UIAlertControllerStyleActionSheet];
     __weak PJController *weakSelf = self;
     for (NSUInteger index = 0; index < self.favoriteLocations.count; index++) {
-        NSString *title = [NSString stringWithFormat:@"删除收藏 %lu", (unsigned long)index + 1];
+        NSString *title = [NSString stringWithFormat:@"删除 %@", [self favoriteNameAtIndex:index]];
         [menu addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
             [weakSelf deleteFavoriteAtIndex:index];
         }]];
