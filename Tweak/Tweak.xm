@@ -473,8 +473,65 @@ typedef struct {
             [weakSelf useFavoriteAtIndex:index];
         }]];
     }
+    if (self.favoriteLocations.count) {
+        [menu addAction:[UIAlertAction actionWithTitle:@"删除收藏…" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [weakSelf openFavoriteDeleteMenu];
+            });
+        }]];
+    }
     [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:menu animated:YES completion:nil];
+}
+
+- (void)openFavoriteDeleteMenu {
+    if (!self.favoriteLocations.count) return;
+    UIAlertController *menu = [UIAlertController alertControllerWithTitle:@"删除收藏"
+                                                                       message:@"选择要删除的收藏地点"
+                                                                preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak PJController *weakSelf = self;
+    for (NSUInteger index = 0; index < self.favoriteLocations.count; index++) {
+        NSString *title = [NSString stringWithFormat:@"删除收藏 %lu", (unsigned long)index + 1];
+        [menu addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+            [weakSelf deleteFavoriteAtIndex:index];
+        }]];
+    }
+    if (self.favoriteLocations.count > 1) {
+        [menu addAction:[UIAlertAction actionWithTitle:@"清空全部收藏" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [weakSelf confirmClearFavorites];
+            });
+        }]];
+    }
+    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:menu animated:YES completion:nil];
+}
+
+- (void)deleteFavoriteAtIndex:(NSUInteger)index {
+    if (index >= self.favoriteLocations.count) return;
+    if (index < self.favoriteAnnotations.count) {
+        [self.mapView removeAnnotation:self.favoriteAnnotations[index]];
+        [self.favoriteAnnotations removeObjectAtIndex:index];
+    }
+    [self.favoriteLocations removeObjectAtIndex:index];
+    [self updateFavoritesUI];
+    [self saveMapState];
+}
+
+- (void)confirmClearFavorites {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"清空全部收藏"
+                                                                    message:@"此操作无法撤销"
+                                                             preferredStyle:UIAlertControllerStyleAlert];
+    __weak PJController *weakSelf = self;
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"清空" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+        [weakSelf.mapView removeAnnotations:weakSelf.favoriteAnnotations];
+        [weakSelf.favoriteAnnotations removeAllObjects];
+        [weakSelf.favoriteLocations removeAllObjects];
+        [weakSelf updateFavoritesUI];
+        [weakSelf saveMapState];
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)addCurrentLocationToFavorites {
