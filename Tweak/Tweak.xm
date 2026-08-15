@@ -528,7 +528,7 @@ typedef struct {
     }
     NSUInteger count = self.routeLocations.count + (self.locationAnnotation ? 1 : 0);
     if (count < 2) return;
-    CLLocationCoordinate2D *coordinates = calloc(count, sizeof(CLLocationCoordinate2D));
+    CLLocationCoordinate2D *coordinates = (CLLocationCoordinate2D *)calloc(count, sizeof(CLLocationCoordinate2D));
     NSUInteger offset = 0;
     if (self.locationAnnotation) coordinates[offset++] = self.locationAnnotation.coordinate;
     for (NSUInteger index = 0; index < self.routeLocations.count; index++) {
