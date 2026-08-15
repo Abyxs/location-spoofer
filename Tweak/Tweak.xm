@@ -314,7 +314,7 @@ typedef struct {
     self.favoriteButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
     [self.favoriteButton setTitle:@" 收藏" forState:UIControlStateNormal];
     [self.favoriteButton setImage:[UIImage systemImageNamed:@"star.fill"] forState:UIControlStateNormal];
-    [self.favoriteButton addTarget:self action:@selector(addCurrentLocationToFavorites) forControlEvents:UIControlEventTouchUpInside];
+    [self.favoriteButton addTarget:self action:@selector(openFavoritesMenu) forControlEvents:UIControlEventTouchUpInside];
     [self.mapPanel addSubview:self.favoriteButton];
     [self updateMapLockButtons];
 
@@ -474,6 +474,29 @@ typedef struct {
     [self updateFavoriteDistances];
 }
 
+- (void)openFavoritesMenu {
+    UIAlertController *menu = [UIAlertController alertControllerWithTitle:@"收藏点位"
+                                                                       message:@"保存当前模拟地点，或直接使用已保存的地址"
+                                                                preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak PJController *weakSelf = self;
+    [menu addAction:[UIAlertAction actionWithTitle:@"保存当前模拟地点" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        [weakSelf addCurrentLocationToFavorites];
+    }]];
+    for (NSUInteger index = 0; index < self.favoriteLocations.count; index++) {
+        NSDictionary *favorite = self.favoriteLocations[index];
+        CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake([favorite[@"latitude"] doubleValue], [favorite[@"longitude"] doubleValue]);
+        NSString *distance = self.locationAnnotation && CLLocationCoordinate2DIsValid(self.locationAnnotation.coordinate)
+            ? [self distanceStringFromCoordinate:self.locationAnnotation.coordinate toCoordinate:coordinate]
+            : @"--";
+        NSString *title = [NSString stringWithFormat:@"使用收藏 %lu（距当前 %@）", (unsigned long)index + 1, distance];
+        [menu addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            [weakSelf useFavoriteAtIndex:index];
+        }]];
+    }
+    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:menu animated:YES completion:nil];
+}
+
 - (void)addCurrentLocationToFavorites {
     NSDictionary *location = PJReadCurrentLocation();
     NSNumber *latitude = location[@"latitude"];
@@ -495,6 +518,21 @@ typedef struct {
     [self.favoriteAnnotations addObject:annotation];
     [self.mapView addAnnotation:annotation];
     [self updateFavoritesUI];
+    [self saveMapState];
+}
+
+- (void)useFavoriteAtIndex:(NSUInteger)index {
+    if (index >= self.favoriteLocations.count) return;
+    NSDictionary *favorite = self.favoriteLocations[index];
+    CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake([favorite[@"latitude"] doubleValue], [favorite[@"longitude"] doubleValue]);
+    if (!CLLocationCoordinate2DIsValid(coordinate)) return;
+    [self updateLocationAnnotation:coordinate];
+    PJWriteAbsoluteLocation(coordinate.latitude, coordinate.longitude);
+    if (self.positionLocked) {
+        [self repositionMapForLockedCoordinate:coordinate];
+    } else {
+        [self.mapView setCenterCoordinate:coordinate animated:YES];
+    }
     [self saveMapState];
 }
 
@@ -636,23 +674,25 @@ typedef struct {
     if (!CLLocationCoordinate2DIsValid(coordinate)) return;
     [self updateLocationAnnotation:coordinate];
     PJWriteAbsoluteLocation(coordinate.latitude, coordinate.longitude);
-    if (self.positionLocked) {
-        CGFloat width = CGRectGetWidth(self.mapView.bounds);
-        CGFloat height = CGRectGetHeight(self.mapView.bounds);
-        CGPoint lockedPoint = CGPointMake(self.positionLockPointNormalized.x * width,
-                                          self.positionLockPointNormalized.y * height);
-        CGPoint selectedPoint = [self.mapView convertCoordinate:coordinate toPointToView:self.mapView];
-        CGPoint centerPoint = CGPointMake(width / 2.0, height / 2.0);
-        CGPoint adjustedCenterPoint = CGPointMake(centerPoint.x + selectedPoint.x - lockedPoint.x,
-                                                   centerPoint.y + selectedPoint.y - lockedPoint.y);
-        CLLocationCoordinate2D adjustedCenter = [self.mapView convertPoint:adjustedCenterPoint
-                                                        toCoordinateFromView:self.mapView];
-        if (CLLocationCoordinate2DIsValid(adjustedCenter)) {
-            [self.mapView setCenterCoordinate:adjustedCenter animated:YES];
-        }
-    }
+    if (self.positionLocked) [self repositionMapForLockedCoordinate:coordinate];
     UIImpactFeedbackGenerator *feedback = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
     [feedback impactOccurred];
+}
+
+- (void)repositionMapForLockedCoordinate:(CLLocationCoordinate2D)coordinate {
+    CGFloat width = CGRectGetWidth(self.mapView.bounds);
+    CGFloat height = CGRectGetHeight(self.mapView.bounds);
+    CGPoint lockedPoint = CGPointMake(self.positionLockPointNormalized.x * width,
+                                      self.positionLockPointNormalized.y * height);
+    CGPoint selectedPoint = [self.mapView convertCoordinate:coordinate toPointToView:self.mapView];
+    CGPoint centerPoint = CGPointMake(width / 2.0, height / 2.0);
+    CGPoint adjustedCenterPoint = CGPointMake(centerPoint.x + selectedPoint.x - lockedPoint.x,
+                                               centerPoint.y + selectedPoint.y - lockedPoint.y);
+    CLLocationCoordinate2D adjustedCenter = [self.mapView convertPoint:adjustedCenterPoint
+                                                    toCoordinateFromView:self.mapView];
+    if (CLLocationCoordinate2DIsValid(adjustedCenter)) {
+        [self.mapView setCenterCoordinate:adjustedCenter animated:YES];
+    }
 }
 
 - (void)updateLocationAnnotation:(CLLocationCoordinate2D)coordinate {
