@@ -473,6 +473,13 @@ typedef struct {
             [weakSelf useFavoriteAtIndex:index];
         }]];
     }
+    if (self.favoriteLocations.count > 1) {
+        [menu addAction:[UIAlertAction actionWithTitle:@"调整收藏顺序…" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [weakSelf openFavoriteReorderMenu];
+            });
+        }]];
+    }
     if (self.favoriteLocations.count) {
         [menu addAction:[UIAlertAction actionWithTitle:@"删除收藏…" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -482,6 +489,74 @@ typedef struct {
     }
     [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:menu animated:YES completion:nil];
+}
+
+- (void)openFavoriteReorderMenu {
+    if (self.favoriteLocations.count < 2) return;
+    UIAlertController *menu = [UIAlertController alertControllerWithTitle:@"调整收藏顺序"
+                                                                       message:@"选择要移动的收藏地点"
+                                                                preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak PJController *weakSelf = self;
+    for (NSUInteger index = 0; index < self.favoriteLocations.count; index++) {
+        NSDictionary *favorite = self.favoriteLocations[index];
+        CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake([favorite[@"latitude"] doubleValue], [favorite[@"longitude"] doubleValue]);
+        NSString *distance = self.locationAnnotation && CLLocationCoordinate2DIsValid(self.locationAnnotation.coordinate)
+            ? [self distanceStringFromCoordinate:self.locationAnnotation.coordinate toCoordinate:coordinate]
+            : @"--";
+        NSString *title = [NSString stringWithFormat:@"收藏 %lu（距当前 %@）", (unsigned long)index + 1, distance];
+        [menu addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [weakSelf openFavoriteMoveMenuAtIndex:index];
+            });
+        }]];
+    }
+    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:menu animated:YES completion:nil];
+}
+
+- (void)openFavoriteMoveMenuAtIndex:(NSUInteger)index {
+    if (index >= self.favoriteLocations.count) return;
+    UIAlertController *menu = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"移动收藏 %lu", (unsigned long)index + 1]
+                                                                       message:nil
+                                                                preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak PJController *weakSelf = self;
+    if (index > 0) {
+        [menu addAction:[UIAlertAction actionWithTitle:@"上移一位" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            [weakSelf moveFavoriteFromIndex:index toIndex:index - 1];
+        }]];
+        if (index > 1) {
+            [menu addAction:[UIAlertAction actionWithTitle:@"移到最前" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+                [weakSelf moveFavoriteFromIndex:index toIndex:0];
+            }]];
+        }
+    }
+    if (index + 1 < self.favoriteLocations.count) {
+        [menu addAction:[UIAlertAction actionWithTitle:@"下移一位" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            [weakSelf moveFavoriteFromIndex:index toIndex:index + 1];
+        }]];
+        if (index + 2 < self.favoriteLocations.count) {
+            NSUInteger lastIndex = self.favoriteLocations.count - 1;
+            [menu addAction:[UIAlertAction actionWithTitle:@"移到最后" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+                [weakSelf moveFavoriteFromIndex:index toIndex:lastIndex];
+            }]];
+        }
+    }
+    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:menu animated:YES completion:nil];
+}
+
+- (void)moveFavoriteFromIndex:(NSUInteger)fromIndex toIndex:(NSUInteger)toIndex {
+    if (fromIndex >= self.favoriteLocations.count || toIndex >= self.favoriteLocations.count || fromIndex == toIndex) return;
+    NSDictionary *favorite = self.favoriteLocations[fromIndex];
+    MKPointAnnotation *annotation = fromIndex < self.favoriteAnnotations.count ? self.favoriteAnnotations[fromIndex] : nil;
+    [self.favoriteLocations removeObjectAtIndex:fromIndex];
+    [self.favoriteLocations insertObject:favorite atIndex:toIndex];
+    if (annotation) {
+        [self.favoriteAnnotations removeObjectAtIndex:fromIndex];
+        [self.favoriteAnnotations insertObject:annotation atIndex:toIndex];
+    }
+    [self updateFavoritesUI];
+    [self saveMapState];
 }
 
 - (void)openFavoriteDeleteMenu {
