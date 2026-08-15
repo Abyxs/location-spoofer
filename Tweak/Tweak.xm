@@ -32,7 +32,7 @@ typedef struct {
 }
 @end
 
-@interface PJController : UIViewController <UIGestureRecognizerDelegate>
+@interface PJController : UIViewController <UIGestureRecognizerDelegate, MKMapViewDelegate>
 @property(nonatomic, strong) UIView *panel;
 @property(nonatomic, strong) UIButton *collapsedButton;
 @property(nonatomic, strong) UIButton *closeButton;
@@ -51,12 +51,16 @@ typedef struct {
 @property(nonatomic, strong) UIButton *angleLockButton;
 @property(nonatomic, strong) UIButton *positionLockButton;
 @property(nonatomic, strong) UIButton *favoriteButton;
+@property(nonatomic, strong) UIButton *routeButton;
 @property(nonatomic, strong) UISegmentedControl *mapModeControl;
 @property(nonatomic, strong) UIView *opacityControl;
 @property(nonatomic, strong) UISlider *opacitySlider;
 @property(nonatomic, strong) UILabel *opacityLabel;
 @property(nonatomic, strong) NSMutableArray<NSDictionary *> *favoriteLocations;
 @property(nonatomic, strong) NSMutableArray<MKPointAnnotation *> *favoriteAnnotations;
+@property(nonatomic, strong) NSMutableArray<NSDictionary *> *routeLocations;
+@property(nonatomic, strong) NSMutableArray<MKPointAnnotation *> *routeAnnotations;
+@property(nonatomic, strong) MKPolyline *routePolyline;
 @property(nonatomic) int locationUpdateToken;
 @property(nonatomic, strong) CADisplayLink *displayLink;
 @property(nonatomic) CGPoint direction;
@@ -76,6 +80,13 @@ typedef struct {
 @property(nonatomic) BOOL angleLocked;
 @property(nonatomic) BOOL positionLocked;
 @property(nonatomic) CGPoint positionLockPointNormalized;
+@property(nonatomic) BOOL routeEditing;
+@property(nonatomic) BOOL routeMoving;
+@property(nonatomic, strong) CADisplayLink *routeDisplayLink;
+@property(nonatomic) CLLocationCoordinate2D routeCurrentCoordinate;
+@property(nonatomic) NSUInteger routeTargetIndex;
+@property(nonatomic) NSTimeInterval routeLastTickTimestamp;
+@property(nonatomic) NSTimeInterval routeSendAccumulator;
 @end
 
 @implementation PJController
@@ -210,12 +221,16 @@ typedef struct {
     self.mapView.alpha = 0.58;
     self.mapView.showsCompass = YES;
     self.mapView.showsScale = YES;
+    self.mapView.delegate = self;
     [self.mapPanel addSubview:self.mapView];
     self.favoriteLocations = [NSMutableArray array];
     self.favoriteAnnotations = [NSMutableArray array];
+    self.routeLocations = [NSMutableArray array];
+    self.routeAnnotations = [NSMutableArray array];
 
     NSDictionary *mapPreferences = [NSDictionary dictionaryWithContentsOfFile:PJMapPreferencesPath];
     [self loadFavorites:mapPreferences];
+    [self loadRoute:mapPreferences];
     CGFloat savedOpacity = [mapPreferences[@"opacity"] doubleValue];
     if (savedOpacity < 0.2 || savedOpacity > 1.0) savedOpacity = 0.58;
     self.mapView.alpha = savedOpacity;
@@ -315,9 +330,18 @@ typedef struct {
     [self.favoriteButton setImage:[UIImage systemImageNamed:@"star.fill"] forState:UIControlStateNormal];
     [self.favoriteButton addTarget:self action:@selector(openFavoritesMenu) forControlEvents:UIControlEventTouchUpInside];
     [self.mapPanel addSubview:self.favoriteButton];
+
+    self.routeButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.routeButton.layer.cornerRadius = 8;
+    self.routeButton.tintColor = UIColor.whiteColor;
+    self.routeButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
+    [self.routeButton setImage:[UIImage systemImageNamed:@"point.topleft.down.curvedto.point.bottomright.up"] forState:UIControlStateNormal];
+    [self.routeButton addTarget:self action:@selector(openRouteMenu) forControlEvents:UIControlEventTouchUpInside];
+    [self.mapPanel addSubview:self.routeButton];
     [self updateMapLockButtons];
 
     [self updateFavoritesUI];
+    [self updateRouteUI];
 
     UILabel *hint = [[UILabel alloc] initWithFrame:CGRectZero];
     hint.tag = 2020;
@@ -357,6 +381,7 @@ typedef struct {
     self.angleLockButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 136, 76, 36);
     self.positionLockButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 180, 76, 36);
     self.favoriteButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 224, 76, 36);
+    self.routeButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 268, 76, 36);
     self.opacityControl.frame = CGRectMake(16, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 60, 190, 44);
     self.opacityLabel.frame = CGRectMake(10, 0, 70, 44);
     self.opacitySlider.frame = CGRectMake(76, 7, 104, 30);
@@ -462,6 +487,235 @@ typedef struct {
         ? [UIColor colorWithRed:0.10 green:0.50 blue:0.31 alpha:0.92]
         : [UIColor colorWithWhite:0.05 alpha:0.78];
     [self updateFavoriteDistances];
+}
+
+- (void)loadRoute:(NSDictionary *)preferences {
+    NSArray *storedRoute = [preferences[@"routePoints"] isKindOfClass:[NSArray class]] ? preferences[@"routePoints"] : @[];
+    for (NSDictionary *point in storedRoute) {
+        NSNumber *latitude = point[@"latitude"];
+        NSNumber *longitude = point[@"longitude"];
+        if (!latitude || !longitude) continue;
+        CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake(latitude.doubleValue, longitude.doubleValue);
+        if (!CLLocationCoordinate2DIsValid(coordinate)) continue;
+        [self.routeLocations addObject:@{ @"latitude": @(coordinate.latitude), @"longitude": @(coordinate.longitude) }];
+        MKPointAnnotation *annotation = [MKPointAnnotation new];
+        annotation.coordinate = coordinate;
+        [self.routeAnnotations addObject:annotation];
+        [self.mapView addAnnotation:annotation];
+    }
+    [self updateRouteAnnotations];
+    [self updateRouteLine];
+}
+
+- (CLLocationCoordinate2D)routeCoordinateAtIndex:(NSUInteger)index {
+    if (index >= self.routeLocations.count) return kCLLocationCoordinate2DInvalid;
+    NSDictionary *point = self.routeLocations[index];
+    return CLLocationCoordinate2DMake([point[@"latitude"] doubleValue], [point[@"longitude"] doubleValue]);
+}
+
+- (void)updateRouteAnnotations {
+    for (NSUInteger index = 0; index < self.routeAnnotations.count; index++) {
+        MKPointAnnotation *annotation = self.routeAnnotations[index];
+        annotation.title = [NSString stringWithFormat:@"路径点 %lu", (unsigned long)index + 1];
+        annotation.subtitle = index + 1 == self.routeAnnotations.count ? @"终点" : @"途经点";
+    }
+}
+
+- (void)updateRouteLine {
+    if (self.routePolyline) {
+        [self.mapView removeOverlay:self.routePolyline];
+        self.routePolyline = nil;
+    }
+    NSUInteger count = self.routeLocations.count + (self.locationAnnotation ? 1 : 0);
+    if (count < 2) return;
+    CLLocationCoordinate2D *coordinates = calloc(count, sizeof(CLLocationCoordinate2D));
+    NSUInteger offset = 0;
+    if (self.locationAnnotation) coordinates[offset++] = self.locationAnnotation.coordinate;
+    for (NSUInteger index = 0; index < self.routeLocations.count; index++) {
+        coordinates[offset++] = [self routeCoordinateAtIndex:index];
+    }
+    self.routePolyline = [MKPolyline polylineWithCoordinates:coordinates count:count];
+    free(coordinates);
+    [self.mapView addOverlay:self.routePolyline];
+}
+
+- (void)updateRouteUI {
+    UILabel *hint = (UILabel *)[self.mapPanel viewWithTag:2020];
+    if (self.routeEditing) {
+        [self.routeButton setTitle:@" 完成" forState:UIControlStateNormal];
+        [self.routeButton setImage:[UIImage systemImageNamed:@"checkmark"] forState:UIControlStateNormal];
+        hint.text = [NSString stringWithFormat:@"长按添加路径点（%lu 个）", (unsigned long)self.routeLocations.count];
+    } else if (self.routeMoving) {
+        [self.routeButton setTitle:@" 停止" forState:UIControlStateNormal];
+        [self.routeButton setImage:[UIImage systemImageNamed:@"stop.fill"] forState:UIControlStateNormal];
+        hint.text = [NSString stringWithFormat:@"按路径移动：%lu/%lu", (unsigned long)MIN(self.routeTargetIndex + 1, self.routeLocations.count), (unsigned long)self.routeLocations.count];
+    } else {
+        NSString *title = self.routeLocations.count ? [NSString stringWithFormat:@" 路径%lu", (unsigned long)self.routeLocations.count] : @" 路径";
+        [self.routeButton setTitle:title forState:UIControlStateNormal];
+        [self.routeButton setImage:[UIImage systemImageNamed:@"point.topleft.down.curvedto.point.bottomright.up"] forState:UIControlStateNormal];
+        hint.text = @"长按地图选择位置";
+    }
+    self.routeButton.backgroundColor = (self.routeEditing || self.routeMoving)
+        ? [UIColor colorWithRed:0.10 green:0.50 blue:0.31 alpha:0.92]
+        : [UIColor colorWithWhite:0.05 alpha:0.78];
+}
+
+- (void)openRouteMenu {
+    if (self.routeEditing) {
+        self.routeEditing = NO;
+        [self updateRouteUI];
+        [self saveMapState];
+        return;
+    }
+    if (self.routeMoving) {
+        [self stopRoute];
+        return;
+    }
+    NSString *message = self.routeLocations.count
+        ? [NSString stringWithFormat:@"已选择 %lu 个路径点，移动会从当前模拟位置开始", (unsigned long)self.routeLocations.count]
+        : @"先添加路径点，再开始按顺序移动";
+    UIAlertController *menu = [UIAlertController alertControllerWithTitle:@"路径移动"
+                                                                   message:message
+                                                            preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak PJController *weakSelf = self;
+    [menu addAction:[UIAlertAction actionWithTitle:@"添加路径点" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        weakSelf.routeEditing = YES;
+        [weakSelf updateRouteUI];
+    }]];
+    if (self.routeLocations.count) {
+        [menu addAction:[UIAlertAction actionWithTitle:@"开始按路径移动" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            [weakSelf startRoute];
+        }]];
+        [menu addAction:[UIAlertAction actionWithTitle:@"撤销最后一个点" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+            [weakSelf removeLastRoutePoint];
+        }]];
+        [menu addAction:[UIAlertAction actionWithTitle:@"清空路径" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+            [weakSelf clearRoute];
+        }]];
+    }
+    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:menu animated:YES completion:nil];
+}
+
+- (void)addRoutePoint:(CLLocationCoordinate2D)coordinate {
+    if (!CLLocationCoordinate2DIsValid(coordinate)) return;
+    [self.routeLocations addObject:@{ @"latitude": @(coordinate.latitude), @"longitude": @(coordinate.longitude) }];
+    MKPointAnnotation *annotation = [MKPointAnnotation new];
+    annotation.coordinate = coordinate;
+    [self.routeAnnotations addObject:annotation];
+    [self.mapView addAnnotation:annotation];
+    [self updateRouteAnnotations];
+    [self updateRouteLine];
+    [self updateRouteUI];
+    [self saveMapState];
+}
+
+- (void)removeLastRoutePoint {
+    if (!self.routeLocations.count) return;
+    MKPointAnnotation *annotation = self.routeAnnotations.lastObject;
+    if (annotation) [self.mapView removeAnnotation:annotation];
+    [self.routeAnnotations removeLastObject];
+    [self.routeLocations removeLastObject];
+    [self updateRouteAnnotations];
+    [self updateRouteLine];
+    [self updateRouteUI];
+    [self saveMapState];
+}
+
+- (void)clearRoute {
+    [self stopRoute];
+    [self.mapView removeAnnotations:self.routeAnnotations];
+    [self.routeAnnotations removeAllObjects];
+    [self.routeLocations removeAllObjects];
+    [self updateRouteLine];
+    [self updateRouteUI];
+    [self saveMapState];
+}
+
+- (void)startRoute {
+    if (!self.routeLocations.count) return;
+    NSDictionary *location = PJReadCurrentLocation();
+    NSNumber *latitude = location[@"latitude"];
+    NSNumber *longitude = location[@"longitude"];
+    if (!latitude || !longitude) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"无法开始路径"
+                                                                       message:@"请先在 AppsDump3 设置一次虚拟位置"
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+    CLLocationCoordinate2D current = CLLocationCoordinate2DMake(latitude.doubleValue, longitude.doubleValue);
+    if (!CLLocationCoordinate2DIsValid(current)) return;
+    [self stopMoving];
+    self.routeEditing = NO;
+    self.routeCurrentCoordinate = current;
+    self.routeTargetIndex = 0;
+    self.routeLastTickTimestamp = 0;
+    self.routeSendAccumulator = 0;
+    self.routeMoving = YES;
+    [self updateLocationAnnotation:current];
+    [self updateRouteUI];
+    self.routeDisplayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(tickRoute:)];
+    [self.routeDisplayLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+}
+
+- (void)stopRoute {
+    [self.routeDisplayLink invalidate];
+    self.routeDisplayLink = nil;
+    self.routeMoving = NO;
+    self.routeLastTickTimestamp = 0;
+    self.routeSendAccumulator = 0;
+    [self updateRouteUI];
+}
+
+- (void)tickRoute:(CADisplayLink *)link {
+    if (!self.routeMoving || self.routeTargetIndex >= self.routeLocations.count) {
+        [self stopRoute];
+        return;
+    }
+    if (self.routeLastTickTimestamp <= 0) {
+        self.routeLastTickTimestamp = link.timestamp;
+        return;
+    }
+    NSTimeInterval delta = MIN(0.1, MAX(0.001, link.timestamp - self.routeLastTickTimestamp));
+    self.routeLastTickTimestamp = link.timestamp;
+    CLLocationCoordinate2D target = [self routeCoordinateAtIndex:self.routeTargetIndex];
+    CLLocation *from = [[CLLocation alloc] initWithLatitude:self.routeCurrentCoordinate.latitude longitude:self.routeCurrentCoordinate.longitude];
+    CLLocation *to = [[CLLocation alloc] initWithLatitude:target.latitude longitude:target.longitude];
+    CLLocationDistance remaining = [from distanceFromLocation:to];
+    static const double speeds[] = {1.4, 2.5, 5.0};
+    double step = speeds[self.speedIndex] * delta;
+    if (remaining <= step || remaining < 0.15) {
+        self.routeCurrentCoordinate = target;
+        self.routeTargetIndex++;
+    } else {
+        double fraction = step / remaining;
+        self.routeCurrentCoordinate = CLLocationCoordinate2DMake(
+            self.routeCurrentCoordinate.latitude + (target.latitude - self.routeCurrentCoordinate.latitude) * fraction,
+            self.routeCurrentCoordinate.longitude + (target.longitude - self.routeCurrentCoordinate.longitude) * fraction
+        );
+    }
+    self.routeSendAccumulator += delta;
+    if (self.routeSendAccumulator >= 0.20 || self.routeTargetIndex >= self.routeLocations.count) {
+        self.routeSendAccumulator = 0;
+        [self updateLocationAnnotation:self.routeCurrentCoordinate];
+        PJWriteAbsoluteLocation(self.routeCurrentCoordinate.latitude, self.routeCurrentCoordinate.longitude);
+        [self updateRouteUI];
+    }
+    if (self.routeTargetIndex >= self.routeLocations.count) [self stopRoute];
+}
+
+- (MKOverlayRenderer *)mapView:(MKMapView *)mapView rendererForOverlay:(id<MKOverlay>)overlay {
+    if ([overlay isKindOfClass:MKPolyline.class]) {
+        MKPolylineRenderer *renderer = [[MKPolylineRenderer alloc] initWithPolyline:(MKPolyline *)overlay];
+        renderer.strokeColor = [UIColor colorWithRed:0.05 green:0.85 blue:0.50 alpha:0.96];
+        renderer.lineWidth = 5;
+        renderer.lineJoin = kCGLineJoinRound;
+        renderer.lineCap = kCGLineCapRound;
+        return renderer;
+    }
+    return nil;
 }
 
 - (void)openFavoritesMenu {
@@ -768,7 +1022,8 @@ typedef struct {
         @"positionLocked": @(self.positionLocked),
         @"positionLockX": @(self.positionLockPointNormalized.x),
         @"positionLockY": @(self.positionLockPointNormalized.y),
-        @"favorites": self.favoriteLocations ?: @[]
+        @"favorites": self.favoriteLocations ?: @[],
+        @"routePoints": self.routeLocations ?: @[]
     } writeToFile:PJMapPreferencesPath atomically:YES];
 }
 
@@ -815,13 +1070,7 @@ typedef struct {
     if (!latitude || !longitude) return;
     CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake(latitude.doubleValue, longitude.doubleValue);
     if (!CLLocationCoordinate2DIsValid(coordinate)) return;
-    if (!self.locationAnnotation) {
-        self.locationAnnotation = [MKPointAnnotation new];
-        self.locationAnnotation.title = @"虚拟位置";
-        [self.mapView addAnnotation:self.locationAnnotation];
-    }
-    self.locationAnnotation.coordinate = coordinate;
-    [self updateFavoriteDistances];
+    [self updateLocationAnnotation:coordinate];
     if (centerMap) [self.mapView setRegion:MKCoordinateRegionMakeWithDistance(coordinate, 1200, 1200) animated:YES];
 }
 
@@ -850,6 +1099,12 @@ typedef struct {
     CGPoint point = [gesture locationInView:self.mapView];
     CLLocationCoordinate2D coordinate = [self.mapView convertPoint:point toCoordinateFromView:self.mapView];
     if (!CLLocationCoordinate2DIsValid(coordinate)) return;
+    if (self.routeEditing) {
+        [self addRoutePoint:coordinate];
+        UIImpactFeedbackGenerator *feedback = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+        [feedback impactOccurred];
+        return;
+    }
     [self updateLocationAnnotation:coordinate];
     PJWriteAbsoluteLocation(coordinate.latitude, coordinate.longitude);
     if (self.positionLocked) [self repositionMapForLockedCoordinate:coordinate];
@@ -881,6 +1136,7 @@ typedef struct {
     }
     self.locationAnnotation.coordinate = coordinate;
     [self updateFavoriteDistances];
+    [self updateRouteLine];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -893,6 +1149,7 @@ typedef struct {
 
 - (void)hideJoystick {
     [self stopMoving];
+    [self stopRoute];
     PJSetJoystickEnabled(NO);
     self.view.window.hidden = YES;
 }
@@ -958,6 +1215,7 @@ typedef struct {
 }
 
 - (void)moveJoystick:(UIPanGestureRecognizer *)gesture {
+    if (gesture.state == UIGestureRecognizerStateBegan && self.routeMoving) [self stopRoute];
     CGPoint point = [gesture locationInView:self.base];
     CGPoint center = CGPointMake(CGRectGetMidX(self.base.bounds), CGRectGetMidY(self.base.bounds));
     CGFloat dx = point.x - center.x;
