@@ -52,6 +52,7 @@ typedef struct {
 @property(nonatomic, strong) UIButton *positionLockButton;
 @property(nonatomic, strong) UIButton *favoriteButton;
 @property(nonatomic, strong) UIButton *routeButton;
+@property(nonatomic, strong) UIButton *markerVisibilityButton;
 @property(nonatomic, strong) UISegmentedControl *mapModeControl;
 @property(nonatomic, strong) UIView *opacityControl;
 @property(nonatomic, strong) UISlider *opacitySlider;
@@ -80,6 +81,7 @@ typedef struct {
 @property(nonatomic) BOOL angleLocked;
 @property(nonatomic) BOOL positionLocked;
 @property(nonatomic) CGPoint positionLockPointNormalized;
+@property(nonatomic) BOOL markersHidden;
 @property(nonatomic) BOOL routeEditing;
 @property(nonatomic) BOOL routeMoving;
 @property(nonatomic, strong) CADisplayLink *routeDisplayLink;
@@ -237,6 +239,7 @@ typedef struct {
     self.scaleLocked = [mapPreferences[@"scaleLocked"] boolValue];
     self.angleLocked = [mapPreferences[@"angleLocked"] boolValue];
     self.positionLocked = [mapPreferences[@"positionLocked"] boolValue];
+    self.markersHidden = [mapPreferences[@"markersHidden"] boolValue];
     NSNumber *positionLockX = mapPreferences[@"positionLockX"];
     NSNumber *positionLockY = mapPreferences[@"positionLockY"];
     self.positionLockPointNormalized = positionLockX && positionLockY
@@ -338,10 +341,18 @@ typedef struct {
     [self.routeButton setImage:[UIImage systemImageNamed:@"point.topleft.down.curvedto.point.bottomright.up"] forState:UIControlStateNormal];
     [self.routeButton addTarget:self action:@selector(openRouteMenu) forControlEvents:UIControlEventTouchUpInside];
     [self.mapPanel addSubview:self.routeButton];
+
+    self.markerVisibilityButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.markerVisibilityButton.layer.cornerRadius = 8;
+    self.markerVisibilityButton.tintColor = UIColor.whiteColor;
+    self.markerVisibilityButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
+    [self.markerVisibilityButton addTarget:self action:@selector(toggleSavedMarkers) forControlEvents:UIControlEventTouchUpInside];
+    [self.mapPanel addSubview:self.markerVisibilityButton];
     [self updateMapLockButtons];
 
     [self updateFavoritesUI];
     [self updateRouteUI];
+    [self updateSavedMarkerVisibility];
 
     UILabel *hint = [[UILabel alloc] initWithFrame:CGRectZero];
     hint.tag = 2020;
@@ -382,6 +393,7 @@ typedef struct {
     self.positionLockButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 180, 76, 36);
     self.favoriteButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 224, 76, 36);
     self.routeButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 268, 76, 36);
+    self.markerVisibilityButton.frame = CGRectMake(self.view.bounds.size.width - 92, top + 312, 76, 36);
     self.opacityControl.frame = CGRectMake(16, self.view.bounds.size.height - self.view.safeAreaInsets.bottom - 60, 190, 44);
     self.opacityLabel.frame = CGRectMake(10, 0, 70, 44);
     self.opacitySlider.frame = CGRectMake(76, 7, 104, 30);
@@ -487,6 +499,54 @@ typedef struct {
         ? [UIColor colorWithRed:0.10 green:0.50 blue:0.31 alpha:0.92]
         : [UIColor colorWithWhite:0.05 alpha:0.78];
     [self updateFavoriteDistances];
+    [self updateSavedMarkerVisibility];
+}
+
+- (BOOL)isFavoriteAtIndexCurrentLocation:(NSUInteger)index {
+    if (!self.locationAnnotation || index >= self.favoriteLocations.count) return NO;
+    CLLocationCoordinate2D favorite = CLLocationCoordinate2DMake([self.favoriteLocations[index][@"latitude"] doubleValue],
+                                                                  [self.favoriteLocations[index][@"longitude"] doubleValue]);
+    if (!CLLocationCoordinate2DIsValid(favorite)) return NO;
+    CLLocation *current = [[CLLocation alloc] initWithLatitude:self.locationAnnotation.coordinate.latitude
+                                                     longitude:self.locationAnnotation.coordinate.longitude];
+    CLLocation *saved = [[CLLocation alloc] initWithLatitude:favorite.latitude longitude:favorite.longitude];
+    return [current distanceFromLocation:saved] < 8.0;
+}
+
+- (void)toggleSavedMarkers {
+    self.markersHidden = !self.markersHidden;
+    [self updateSavedMarkerVisibility];
+    [self saveMapState];
+}
+
+- (void)updateSavedMarkerVisibility {
+    for (NSUInteger index = 0; index < self.favoriteAnnotations.count; index++) {
+        MKPointAnnotation *annotation = self.favoriteAnnotations[index];
+        BOOL visible = !self.markersHidden || [self isFavoriteAtIndexCurrentLocation:index];
+        if (visible && ![self.mapView.annotations containsObject:annotation]) {
+            [self.mapView addAnnotation:annotation];
+        } else if (!visible && [self.mapView.annotations containsObject:annotation]) {
+            [self.mapView removeAnnotation:annotation];
+        }
+    }
+    for (MKPointAnnotation *annotation in self.routeAnnotations) {
+        if (self.markersHidden && [self.mapView.annotations containsObject:annotation]) {
+            [self.mapView removeAnnotation:annotation];
+        } else if (!self.markersHidden && ![self.mapView.annotations containsObject:annotation]) {
+            [self.mapView addAnnotation:annotation];
+        }
+    }
+    [self updateRouteLine];
+    [self updateMarkerVisibilityButton];
+}
+
+- (void)updateMarkerVisibilityButton {
+    [self.markerVisibilityButton setTitle:self.markersHidden ? @" 显示" : @" 隐藏" forState:UIControlStateNormal];
+    [self.markerVisibilityButton setImage:[UIImage systemImageNamed:self.markersHidden ? @"eye.slash" : @"eye"]
+                                 forState:UIControlStateNormal];
+    self.markerVisibilityButton.backgroundColor = self.markersHidden
+        ? [UIColor colorWithRed:0.10 green:0.50 blue:0.31 alpha:0.92]
+        : [UIColor colorWithWhite:0.05 alpha:0.78];
 }
 
 - (void)loadRoute:(NSDictionary *)preferences {
@@ -526,6 +586,7 @@ typedef struct {
         [self.mapView removeOverlay:self.routePolyline];
         self.routePolyline = nil;
     }
+    if (self.markersHidden) return;
     NSUInteger count = self.routeLocations.count + (self.locationAnnotation ? 1 : 0);
     if (count < 2) return;
     CLLocationCoordinate2D *coordinates = (CLLocationCoordinate2D *)calloc(count, sizeof(CLLocationCoordinate2D));
@@ -605,7 +666,7 @@ typedef struct {
     [self.routeAnnotations addObject:annotation];
     [self.mapView addAnnotation:annotation];
     [self updateRouteAnnotations];
-    [self updateRouteLine];
+    [self updateSavedMarkerVisibility];
     [self updateRouteUI];
     [self saveMapState];
 }
@@ -1136,7 +1197,7 @@ typedef struct {
     }
     self.locationAnnotation.coordinate = coordinate;
     [self updateFavoriteDistances];
-    [self updateRouteLine];
+    [self updateSavedMarkerVisibility];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
